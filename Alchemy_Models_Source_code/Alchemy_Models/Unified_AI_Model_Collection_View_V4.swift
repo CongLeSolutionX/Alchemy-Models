@@ -210,7 +210,7 @@ struct UnifiedProviderFactory {
 
 @MainActor
 final class UnifiedModelExplorerVM: ObservableObject {
-    @Published var selection: ModelProvider = .openai
+    @Published var selection: ModelProvider = .gemini
     @Published var models: [any UnifiedAIModel] = []
     @Published var search: String = ""
     @Published var isLoading: Bool = false
@@ -238,71 +238,158 @@ final class UnifiedModelExplorerVM: ObservableObject {
 }
 
 // MARK: - Modern SwiftUI Interface
-
 struct UnifiedModelExplorerView: View {
     @StateObject var vm = UnifiedModelExplorerVM()
     @Environment(\.colorScheme) var colorScheme
-    
+
     var body: some View {
-        Text("UnifiedModelExplorerView")
+        NavigationStack {
+            VStack(spacing: 0) {
+                providerPickerBar(vm: vm)
+                searchBar(vm: vm)
+                contentBody(vm: vm)
+            }
+            .background(
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        vm.selection.palette.opacity(0.09),
+                        colorScheme == .dark ? .black : .white
+                    ]),
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+            )
+            .navigationTitle("AI Model Explorer")
+            .onAppear(perform: vm.loadModels)
+            .onChange(of: vm.selection, vm.loadModels)
+        }
     }
 
-//    var body: some View {
-//        NavigationStack {
-//            VStack(spacing: 0) {
-//                HStack {
-//                    Picker("Provider", selection: $vm.selection) {
-//                        ForEach(ModelProvider.allCases) { src in
-//                            Label(src.rawValue, systemImage: src.logo.symbolName).tag(src)
-//                        }
-//                    }
-//                    .pickerStyle(.segmented)
-//                    .padding(.horizontal)
-//                    
-//                    Spacer()
-//                    if vm.isLoading {
-//                        ProgressView().padding(.trailing, 15)
-//                    }
+    @ViewBuilder
+    private func providerPickerBar(vm: UnifiedModelExplorerVM) -> some View {
+        HStack {
+            Picker("Provider", selection: $vm.selection) {
+                Text("UnifiedModelExplorerVM.selection")
+//                ForEach(ModelProvider.allCases) { src in
+//                    Label("src.rawValue, systemImage: src.logo.symbolName")//.tag(src)
 //                }
-//                .padding(.vertical)
-//                
-//                HStack {
-//                    Image(systemName: "magnifyingglass")
-//                    TextField("Search models/tags...", text: $vm.search)
-//                }
-//                .padding(10).background(.ultraThickMaterial)
-//                .cornerRadius(12)
-//                .padding([.horizontal, .bottom])
-//                
-//                if let err = vm.error {
-//                    ErrorBanner(message: err) { vm.loadModels() }
-//                } else if vm.filteredModels.isEmpty {
-//                    ContentUnavailableView("No models found", systemImage: "exclamationmark.triangle.fill")
-//                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-//                } else {
-//                    ScrollView {
-//                        LazyVStack(alignment: .leading, spacing: 15) {
-//                            ForEach(vm.filteredModels) { model in
-//                                NavigationLink(
-//                                    destination: ModelDetailUnifiedView(model)
-//                                ) {
-//                                    ModelCardUnifiedView(model)
-//                                }
-//                                .buttonStyle(.plain)
-//                            }
-//                        }
-//                        .padding(.horizontal)
-//                        .padding(.vertical, 5)
-//                    }
-//                }
-//            }
-//            .background(LinearGradient(gradient: Gradient(colors: [vm.selection.palette.opacity(0.09), colorScheme == .dark ? .black : .white]), startPoint: .topLeading, endPoint: .bottomTrailing))
-//            .navigationTitle("AI Model Explorer")
-//            .onAppear(perform: vm.loadModels)
-//            .onChange(of: vm.selection, vm.loadModels)
-//        }
-//    }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            Spacer()
+            if vm.isLoading {
+                ProgressView().padding(.trailing, 15)
+            }
+        }
+        .padding(.vertical)
+    }
+
+    @ViewBuilder
+    private func searchBar(vm: UnifiedModelExplorerVM) -> some View {
+        HStack {
+            Image(systemName: "magnifyingglass")
+            TextField("Search models/tags...", text: $vm.search)
+        }
+        .padding(10)
+        .background(.ultraThickMaterial)
+        .cornerRadius(12)
+        .padding([.horizontal, .bottom])
+    }
+
+    @ViewBuilder
+    private func contentBody(vm: UnifiedModelExplorerVM) -> some View {
+        if let err = vm.error {
+            ErrorBanner(message: err) { vm.loadModels() }
+        } else if vm.filteredModels.isEmpty {
+            ContentUnavailableView("No models found", systemImage: "exclamationmark.triangle.fill")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            modelScrollList(vm: vm)
+        }
+    }
+
+    @ViewBuilder
+    private func modelScrollList(vm: UnifiedModelExplorerVM) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 15) {
+                ForEach(vm.filteredModels, id: \.id) { model in
+                    NavigationLink(
+                        destination: ModelDetailUnifiedView(model: model)
+                    ) {
+                        ModelCardUnifiedView(model: model)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 5)
+        }
+    }
 }
+
+//struct UnifiedModelExplorerView: View {
+//    @StateObject var vm = UnifiedModelExplorerVM()
+//    @Environment(\.colorScheme) var colorScheme
+//    
+//    var body: some View {
+//        Text("UnifiedModelExplorerView")
+//    }
+//
+////    var body: some View {
+////        NavigationStack {
+////            VStack(spacing: 0) {
+////                HStack {
+////                    Picker("Provider", selection: $vm.selection) {
+////                        ForEach(ModelProvider.allCases) { src in
+////                            Label(src.rawValue, systemImage: src.logo.symbolName).tag(src)
+////                        }
+////                    }
+////                    .pickerStyle(.segmented)
+////                    .padding(.horizontal)
+////                    
+////                    Spacer()
+////                    if vm.isLoading {
+////                        ProgressView().padding(.trailing, 15)
+////                    }
+////                }
+////                .padding(.vertical)
+////                
+////                HStack {
+////                    Image(systemName: "magnifyingglass")
+////                    TextField("Search models/tags...", text: $vm.search)
+////                }
+////                .padding(10).background(.ultraThickMaterial)
+////                .cornerRadius(12)
+////                .padding([.horizontal, .bottom])
+////                
+////                if let err = vm.error {
+////                    ErrorBanner(message: err) { vm.loadModels() }
+////                } else if vm.filteredModels.isEmpty {
+////                    ContentUnavailableView("No models found", systemImage: "exclamationmark.triangle.fill")
+////                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+////                } else {
+////                    ScrollView {
+////                        LazyVStack(alignment: .leading, spacing: 15) {
+////                            ForEach(vm.filteredModels) { model in
+////                                NavigationLink(
+////                                    destination: ModelDetailUnifiedView(model)
+////                                ) {
+////                                    ModelCardUnifiedView(model)
+////                                }
+////                                .buttonStyle(.plain)
+////                            }
+////                        }
+////                        .padding(.horizontal)
+////                        .padding(.vertical, 5)
+////                    }
+////                }
+////            }
+////            .background(LinearGradient(gradient: Gradient(colors: [vm.selection.palette.opacity(0.09), colorScheme == .dark ? .black : .white]), startPoint: .topLeading, endPoint: .bottomTrailing))
+////            .navigationTitle("AI Model Explorer")
+////            .onAppear(perform: vm.loadModels)
+////            .onChange(of: vm.selection, vm.loadModels)
+////        }
+////    }
+//}
 
 struct ErrorBanner: View {
     let message: String
