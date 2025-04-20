@@ -15,7 +15,7 @@ struct Alchemy_ModelsApp: App {
             //AIMultiProviderExplorerView()
             //OpenAIChatAPIDemoView()
             //OpenAIStreamingChatView()
-            OpenAIChatVoiceDemoView()
+            RootView()
         }
     }
 }
