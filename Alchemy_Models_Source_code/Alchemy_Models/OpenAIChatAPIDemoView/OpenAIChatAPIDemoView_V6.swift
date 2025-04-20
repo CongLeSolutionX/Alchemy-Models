@@ -138,58 +138,58 @@
 //
 //// MARK: - SPEECH RECOGNIZER
 //
-final class SpeechRecognizer: NSObject, ObservableObject {
-    @Published var transcript: String = ""
-    @Published var isRecording: Bool = false
-    @Published var errorMessage: String?
-    
-    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-    private var recognitionTask: SFSpeechRecognitionTask?
-    private let audioEngine = AVAudioEngine()
-    
-    func requestAuthorization(completion: @escaping (Bool) -> Void) {
-        SFSpeechRecognizer.requestAuthorization { status in
-            DispatchQueue.main.async {
-                completion(status == .authorized)
-            }
-        }
-    }
-    func startRecording() throws {
-        errorMessage = nil
-        transcript = ""
-        isRecording = true
-        
-        if audioEngine.isRunning {
-            audioEngine.stop(); recognitionTask?.cancel()
-        }
-        let node = audioEngine.inputNode
-        let recordingFormat = node.outputFormat(forBus: 0)
-        node.removeTap(onBus: 0)
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        recognitionTask = recognizer?.recognitionTask(with: request) { [weak self] result, error in
-            guard let self else { return }
-            if let result = result { self.transcript = result.bestTranscription.formattedString }
-            if let error = error {
-                self.errorMessage = error.localizedDescription
-                self.stopRecording()
-            }
-        }
-        node.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            request.append(buffer)
-        }
-        audioEngine.prepare()
-        try audioEngine.start()
-    }
-    func stopRecording() {
-        if audioEngine.isRunning {
-            audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
-        }
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        isRecording = false
-    }
-}
+//final class SpeechRecognizer: NSObject, ObservableObject {
+//    @Published var transcript: String = ""
+//    @Published var isRecording: Bool = false
+//    @Published var errorMessage: String?
+//    
+//    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+//    private var recognitionTask: SFSpeechRecognitionTask?
+//    private let audioEngine = AVAudioEngine()
+//    
+//    func requestAuthorization(completion: @escaping (Bool) -> Void) {
+//        SFSpeechRecognizer.requestAuthorization { status in
+//            DispatchQueue.main.async {
+//                completion(status == .authorized)
+//            }
+//        }
+//    }
+//    func startRecording() throws {
+//        errorMessage = nil
+//        transcript = ""
+//        isRecording = true
+//        
+//        if audioEngine.isRunning {
+//            audioEngine.stop(); recognitionTask?.cancel()
+//        }
+//        let node = audioEngine.inputNode
+//        let recordingFormat = node.outputFormat(forBus: 0)
+//        node.removeTap(onBus: 0)
+//        let request = SFSpeechAudioBufferRecognitionRequest()
+//        recognitionTask = recognizer?.recognitionTask(with: request) { [weak self] result, error in
+//            guard let self else { return }
+//            if let result = result { self.transcript = result.bestTranscription.formattedString }
+//            if let error = error {
+//                self.errorMessage = error.localizedDescription
+//                self.stopRecording()
+//            }
+//        }
+//        node.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+//            request.append(buffer)
+//        }
+//        audioEngine.prepare()
+//        try audioEngine.start()
+//    }
+//    func stopRecording() {
+//        if audioEngine.isRunning {
+//            audioEngine.stop()
+//            audioEngine.inputNode.removeTap(onBus: 0)
+//        }
+//        recognitionTask?.cancel()
+//        recognitionTask = nil
+//        isRecording = false
+//    }
+//}
 
 //// MARK: - VIEWMODEL / STORE
 //
