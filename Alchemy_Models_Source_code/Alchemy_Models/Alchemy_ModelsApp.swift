@@ -11,9 +11,9 @@ import SwiftUI
 struct Alchemy_ModelsApp: App {
     var body: some Scene {
         WindowGroup {
-            //ContentView()
+            ContentView()
             //AIMultiProviderExplorerView()
-            OpenAIChatAPIDemoView()
+            //OpenAIChatAPIDemoView()
             
         }
     }
