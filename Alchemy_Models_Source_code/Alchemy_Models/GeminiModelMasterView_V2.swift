@@ -857,7 +857,6 @@ struct GeminiModelsMasterView: View {
     }
     
     // --- Helper Functions for Loading & API Key Handling (Unchanged Logic) ---
-    // --- Helper Functions for Loading & API Key Handling ---
     private func handleToggleChange(to newValue: Bool) {
         print("Toggle changed: Switched to \(newValue ? "Mock Data" : "Live API")")
         allModels = []
@@ -898,9 +897,9 @@ struct GeminiModelsMasterView: View {
     private func loadModelsAsync(checkApiKey: Bool) async {
         if !isLoading { isLoading = true } // Double-check loading state
         // This specific check is less relevant now with the sheet logic handling it upfront
-        // if checkApiKey && !useMockData && storedApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        //     showingApiKeySheet = true; isLoading = false; return
-        // }
+        if checkApiKey && !useMockData && storedApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            showingApiKeySheet = true; isLoading = false; return
+        }
         let serviceToUse = currentApiService
         print("🔄 Loading models using \(useMockData ? "MockAPIService (Gemini)" : "LiveAPIService (Gemini)")...")
         do {
@@ -924,8 +923,8 @@ struct GeminiModelsMasterView: View {
 // MARK: - Previews (Updated with new Mock Data)
 
 #Preview("Gemini Main View (Table Mock)") {
-    EmptyView()
-    //    GeminiModelsMasterView()
+//    EmptyView()
+        GeminiModelsMasterView()
 }
 
 //#Preview("Gemini Featured Card (Table Mock)") {
