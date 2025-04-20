@@ -1,15 +1,12 @@
 //
 //  OpenAIChatAPIDemoView_V6.swift
 //  Alchemy_Models
-//
+//  AIChatVoiceDemo
 //  Created by Cong Le on 4/20/25.
 //
 
-//
-//  OpenAIChatVoiceDemoView.swift
 //  AIChatVoiceDemo
 //
-//  Created by Assistant on 2024/06/08.
 //  Single-file, ready-to-run SwiftUI OpenAI chatbot with live speech-to-text input.
 //
 
@@ -47,8 +44,8 @@ struct Conversation: Identifiable, Codable, Hashable {
         self.id = id
         self.messages = messages
         self.title = title.isEmpty
-            ? (messages.first(where: { $0.role == .user })?.content.prefix(32).description ?? "Chat")
-            : title
+        ? (messages.first(where: { $0.role == .user })?.content.prefix(32).description ?? "Chat")
+        : title
         self.createdAt = createdAt
     }
 }
@@ -268,205 +265,361 @@ struct OpenAIChatVoiceDemoView: View {
     @AppStorage("openai_api_key") private var apiKey: String = ""
     @State private var settingsShown = false
     @State private var profileSheetShown = false
-    @FocusState private var focused: Bool
+    @FocusState private var isInputBarFocused: Bool // Renamed for clarity
     
+    // --- BODY ---
     var body: some View {
-        Text("OpenAIChatVoiceDemoView")
+        NavigationStack {
+            mainContentView
+                .navigationTitle("") // Title is handled inside mainContentView or a subview
+                .navigationBarTitleDisplayMode(.inline) // Often preferred with custom title views
+                .toolbar { toolbarContent } // Use @ToolbarContentBuilder
+                .sheet(isPresented: $settingsShown) { settingsSheetView }
+                .sheet(isPresented: $profileSheetShown) { profileSheetView }
+                .alert("Error", isPresented: .constant(store.errorMessage != nil), actions: {
+                    Button("Dismiss") { store.errorMessage = nil }
+                }, message: {
+                    Text(store.errorMessage ?? "An unknown error occurred.")
+                })
+                .overlay(loadingOverlay)
+                .overlay(alignment: .bottom) { speechErrorOverlay } // Align speech error to bottom
+                .onAppear(perform: setupBackendOnAppear)
+        }
     }
     
-//    var body: some View {
-//        NavigationStack {
-//            VStack(spacing: 0) {
-//                // Conversation title
-//                HStack {
-//                    Text(store.currentConversation.title)
-//                        .font(.title3.bold())
-//                        .accessibilityAddTraits(.isHeader)
-//                    Spacer()
-//                }
-//                .padding(.vertical, 4).padding(.horizontal, 16)
-//                
-//                // Message list
-//                ScrollViewReader { scrollProxy in
-//                    ScrollView {
-//                        VStack(alignment:.leading, spacing: 6) {
-//                            ForEach(store.currentConversation.messages) { msg in
-//                                MessageBubble(message: msg, own: msg.role == .user)
-//                                    .id(msg.id)
-//                                    .contextMenu {
-//                                        Button("Copy") { UIPasteboard.general.string = msg.content }
-//                                        Button("Read Aloud") { store.speakText(msg.content) }
-//                                        ShareLink(item: msg.content)
-//                                    }
-//                                    .onTapGesture { UIPasteboard.general.string = msg.content }
-//                            }
-//                            if store.isLoading {
-//                                ProgressView("Thinking...").padding(.horizontal)
-//                            }
-//                        }
-//                        .padding(.vertical, 8)
-//                        .onChange(of: store.currentConversation.messages.count) { _ in
-//                            withAnimation { scrollProxy.scrollTo(store.currentConversation.messages.last?.id, anchor: .bottom) }
-//                        }
-//                    }
-//                }
-//                // Input bar with voice
-//                ChatInputBar(
-//                    input: $store.input,
-//                    speech: speech,
-//                    store: store,
-//                    focused: $focused
-//                )
-//            }
-//            .toolbar {
-//                ToolbarItem(placement:.navigationBarLeading) {
-//                    Button { profileSheetShown = true }
-//                        label: { Label("History", systemImage: "clock.arrow.circlepath") }
-//                }
-//                ToolbarItem(placement:.navigationBarTrailing) {
-//                    Button { settingsShown = true }
-//                        label: { Label("Settings", systemImage: "gear") }
-//                }
-//            }
-//            .sheet(isPresented: $settingsShown) {
-//                SettingsSheet(
-//                    useMock: $store.useMock,
-//                    apiKey: $apiKey,
-//                    backendSetter: { backend, useMock in
-//                        store.setBackend(backend, useMock: useMock)
-//                    }
-//                )
-//            }
-//            .sheet(isPresented: $profileSheetShown) {
-//                ProfileSheet(
-//                    conversations: $store.conversations,
-//                    onDelete: store.deleteConversation,
-//                    onSelect: store.selectConversation
-//                )
-//            }
-//            .alert(isPresented: .constant(store.errorMessage != nil)) {
-//                Alert(title: Text("Error"), message: Text(store.errorMessage ?? ""), dismissButton: .default(Text("Dismiss"), action: {
-//                    store.errorMessage = nil
-//                }))
-//            }
-//            .overlay(
-//                store.isLoading ? Color.black.opacity(0.10).ignoresSafeArea() : nil
-//            )
-//            .overlay(
-//                // Speech errors
-//                Group {
-//                    if let err = speech.errorMessage {
-//                        VStack { Spacer()
-//                            Text(err)
-//                                .font(.headline)
-//                                .foregroundColor(.white)
-//                                .padding()
-//                                .background(Color.red.opacity(0.9))
-//                                .cornerRadius(10)
-//                                .padding()
-//                        }
-//                        .transition(.move(edge: .bottom))
-//                        .zIndex(99)
-//                    }
-//                }
-//            )
-//        }
-//        .onAppear {
-//            if !apiKey.isEmpty && !store.useMock {
-//                store.setBackend(
-//                    RealOpenAIBackend(apiKey: apiKey, model: "gpt-4o", temperature: 0.7, maxTokens: 384),
-//                    useMock: false
-//                )
-//            }
-//        }
-//    }
+    // --- SUB-VIEWS / VIEW BUILDERS ---
     
-    // MARK: - InputBar wrapper (so Preview is tidy)
-    private struct ChatInputBar: View {
+    /// The main vertical stack containing title, messages, and input bar.
+    @ViewBuilder
+    private var mainContentView: some View {
+        VStack(spacing: 0) {
+            conversationTitleView
+            messageListView
+            ChatInputBar(
+                input: $store.input,
+                speech: speech,
+                store: store
+                //focused: $isInputBarFocused // Pass the FocusState binding
+            )
+        }
+    }
+    
+    /// Displays the current conversation's title.
+    @ViewBuilder
+    private var conversationTitleView: some View {
+        HStack {
+            Text(store.currentConversation.title)
+                .font(.headline) // Adjusted font slightly for common practice
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+            Spacer()
+            // Optional: Add an Edit button for the title if needed
+            // Button { /* Edit title action */ } label: { Image(systemName: "pencil") }
+        }
+        .padding(.vertical, 8) // Adjusted padding
+        .padding(.horizontal)
+        .background(.thinMaterial) // Add a subtle background
+        // Consider adding a Divider() below if desired
+    }
+    
+    /// The scrollable list displaying messages.
+    @ViewBuilder
+    private var messageListView: some View {
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) { // Use LazyVStack for performance
+                    ForEach(store.currentConversation.messages) { msg in
+                        MessageBubble(message: msg, own: msg.role == .user)
+                            .id(msg.id) // Ensure ID is unique and stable
+                            .contextMenu { messageContextMenu(for: msg) }
+                            .onTapGesture { UIPasteboard.general.string = msg.content } // Keep simple tap for copy
+                    }
+                    if store.isLoading {
+                        ProgressView("Thinking...")
+                            .padding(.top, 10)
+                            .frame(maxWidth: .infinity) // Center the progress view
+                    }
+                }
+                .padding(.vertical, 8) // Add padding inside ScrollView
+                .padding(.horizontal, 8) // Reduce horizontal padding slightly
+            }
+            .onChange(of: store.currentConversation.messages.last?.id) {
+                let newLastId = store.currentConversation.messages.last?.id
+                // Scroll when the ID of the *last* message changes
+                if let idToScroll = newLastId {
+                    withAnimation(.spring()) { // Smoother animation
+                        scrollProxy.scrollTo(idToScroll, anchor: .bottom)
+                    }
+                }
+            }
+            // Removed .onChange(of: store.currentConversation.messages.count)
+            // as onChange(of: last.id) is often more reliable for auto-scrolling
+        }
+        .background(Color(.systemGroupedBackground)) // Give the scroll area a subtle background
+    }
+    
+    /// Context menu items for a message bubble.
+    @ViewBuilder
+    private func messageContextMenu(for message: Message) -> some View {
+        Button { UIPasteboard.general.string = message.content } label: {
+            Label("Copy", systemImage: "doc.on.doc")
+        }
+        Button { store.speakText(message.content) } label: {
+            Label("Read Aloud", systemImage: "speaker.wave.2.fill")
+        }
+        ShareLink(item: message.content) {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+        // Optional: Add other actions like "Delete" if applicable
+    }
+    
+    /// Builds the toolbar items.
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button { profileSheetShown = true } label: {
+                Label("History", systemImage: "clock.arrow.circlepath")
+            }
+        }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button { settingsShown = true } label: {
+                Label("Settings", systemImage: "gear")
+            }
+        }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button { store.resetConversation() } label: {
+                Label("New Chat", systemImage: "plus.circle")
+            }
+            .disabled(store.isLoading) // Disable while loading
+        }
+    }
+    
+    /// View for the Settings sheet.
+    @ViewBuilder
+    private var settingsSheetView: some View {
+        SettingsSheet(
+            useMock: $store.useMock,
+            apiKey: $apiKey,
+            // Pass other AppStorage bindings if SettingsSheet modifies them
+            backendSetter: store.setBackend // Simplified passing
+            // Assuming SettingsSheet uses @AppStorage directly for model, temp, tokens
+        )
+    }
+    
+    /// View for the Profile/History sheet.
+    @ViewBuilder
+    private var profileSheetView: some View {
+        ProfileSheet(
+            conversations: $store.conversations,
+            onDelete: store.deleteConversation,
+            onSelect: { conversation in
+                store.selectConversation(conversation)
+                // Dismiss happens automatically in ProfileSheet or handled there
+            }
+        )
+    }
+    
+    /// Overlay shown when the backend is processing.
+    @ViewBuilder
+    private var loadingOverlay: some View {
+        if store.isLoading {
+            Color.black.opacity(0.10)
+                .ignoresSafeArea()
+                .transition(.opacity) // Add a transition
+        }
+    }
+    
+    /// Overlay for displaying speech recognition errors.
+    @ViewBuilder
+    private var speechErrorOverlay: some View {
+        if let err = speech.errorMessage {
+            Text(err)
+                .font(.caption) // Smaller font might be better for overlay
+                .foregroundColor(.white)
+                .padding(8)
+                .background(Color.red.opacity(0.85))
+                .clipShape(Capsule()) // Use Capsule shape
+                .padding(.bottom, 50) // Adjust padding as needed
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(1) // Ensure it's above other content
+                .onAppear {
+                    // Optionally dismiss after a delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        if speech.errorMessage == err { // Only clear if it's the same error
+                            speech.errorMessage = nil
+                        }
+                    }
+                }
+            
+        }
+    }
+    
+    // --- HELPER FUNCTIONS ---
+    
+    /// Sets up the initial chat backend based on settings.
+    private func setupBackendOnAppear() {
+        if !apiKey.isEmpty && !store.useMock {
+            // Assuming SettingsSheet provides default values via its own @AppStorage
+            let settings = SettingsSheet(useMock: .constant(false), apiKey: $apiKey, backendSetter: {_,_ in}) // Create dummy to access defaults
+            store.setBackend(
+                RealOpenAIBackend(
+                    apiKey: apiKey,
+                    model: settings.defaultModelName, // Need access to defaults
+                    temperature: settings.defaultTemperature,
+                    maxTokens: settings.defaultMaxTokens
+                ),
+                useMock: false
+            )
+        } else {
+            // Ensure mock is set if conditions aren't met
+            store.setBackend(MockChatBackend(), useMock: true)
+        }
+        // Request speech authorization early
+        speech.requestAuthorization { granted in
+            if !granted {
+                print("Speech recognition permission denied.")
+                // Optionally show an alert to the user here
+            }
+        }
+    }
+    
+    // --- Static Helper Methods (If any) ---
+    // Example: Date formatting, etc.
+    
+    // MARK: - InputBar (Separate Struct - Recommended)
+    // Keep ChatInputBar as a separate struct for better encapsulation
+    struct ChatInputBar: View {
         @Binding var input: String
         @ObservedObject var speech: SpeechRecognizer
         @ObservedObject var store: ChatStore
-        @FocusState var focused: Bool
-        var body: some View {
-            HStack(spacing: 10) {
-                // Editable field: either .input or live transcript if input is empty
-                TextField("Type or use mic…",
-                    text: Binding(
-                        get: { input.isEmpty ? speech.transcript : input },
-                        set: { input = $0 }
-                    ),
-                    axis: .vertical
-                )
-                .focused($focused)
-                .autocorrectionDisabled()
-                .font(.body)
-                .disabled(store.isLoading)
-                .onSubmit {
-                    //submit()
-                }
-                .padding(6)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(Color.gray.opacity(0.2))
-                )
-                // MIC
-                Button(action: {
-                    if speech.isRecording {
-                        speech.stopRecording()
-                        if !speech.transcript.isEmpty {
-                            input = speech.transcript
-                            //submit()
-                            speech.transcript = ""
-                        }
-                    } else {
-                        speech.requestAuthorization { granted in
-                            if granted {
-                                do { try speech.startRecording() }
-                                catch { speech.errorMessage = error.localizedDescription }
-                            } else {
-                                speech.errorMessage = "Speech recognition not authorized."
-                            }
-                        }
+        @FocusState var focused: Bool // Receive FocusState
+        
+        // Use internal computed property for text field binding
+        private var textFieldBinding: Binding<String> {
+            Binding(
+                get: { input.isEmpty ? speech.transcript : input },
+                set: {
+                    input = $0
+                    // If user starts typing over a transcript, clear the transcript
+                    if !speech.transcript.isEmpty && !$0.isEmpty {
+                        speech.transcript = ""
+                        // Optionally stop recording if user types over it
+                        // if speech.isRecording { speech.stopRecording() }
                     }
-                    focused = false
-                }) {
-                    Image(systemName: speech.isRecording ? "mic.fill" : "mic")
-                        .foregroundColor(speech.isRecording ? .red : .primary)
-                        .font(.system(size: 24))
-                        .scaleEffect(speech.isRecording ? 1.15 : 1.0)
-                        .accessibilityLabel(speech.isRecording ? "Stop Recording" : "Start Voice Input")
                 }
-                .padding(.horizontal, 4)
-                // SEND
-                Button {
-                    //submit()
-                } label: {
-                    Image(systemName: "paperplane.fill")
-                        .foregroundColor(
-                            (input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && speech.transcript.isEmpty) || store.isLoading
-                            ? .gray
-                            : .blue
-                        )
-                        .font(.system(size: 22))
-                }
-                .disabled(
-                    (input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && speech.transcript.isEmpty)
-                    || store.isLoading
-                )
+            )
+        }
+        
+        var body: some View {
+            HStack(spacing: 8) { // Reduced spacing
+                // Editable field
+                TextField("Type or use mic…", text: textFieldBinding, axis: .vertical)
+                    .focused($focused) // Use the passed-in FocusState
+                    .lineLimit(1...5) // Allow multiple lines
+                    .padding(10) // Consistent padding
+                    .background(Color(.secondarySystemBackground)) // Background for text field
+                    .clipShape(RoundedRectangle(cornerRadius: 18)) // Rounded shape
+                    .overlay( // Add border if needed
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+                    .onSubmit(submit) // Use onSubmit on TextField
+                    .disabled(store.isLoading)
+                
+                // MIC Button
+                micButton
+                
+                // SEND Button
+                sendButton
             }
-            .padding(8)
-            .background(.background)
-            .overlay(Divider(), alignment: .top)
+            .padding(.horizontal, 12) // Main padding for the bar
+            .padding(.vertical, 8)
+            .background(.thinMaterial) // Background for the whole bar
+            .animation(.easeInOut(duration: 0.2), value: speech.isRecording) // Animate mic button changes
+        }
+        
+        // --- InputBar Sub-Components ---
+        
+        private var micButton: some View {
+            Button(action: toggleRecording) {
+                Image(systemName: speech.isRecording ? "stop.circle.fill" : "mic.circle.fill") // More distinct icons
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28) // Slightly larger touch target
+                    .foregroundStyle(speech.isRecording ? Color.red : Color.blue) // Use foregroundStyle
+                    .padding(.vertical, 4)
+                    .contentTransition(.symbolEffect(.replace)) // Nice transition
+                    .accessibilityLabel(speech.isRecording ? "Stop Recording" : "Start Voice Input")
+            }
+            .disabled(store.isLoading) // Disable mic while loading response
+        }
+        
+        private var sendButton: some View {
+            Button(action: submit) {
+                Image(systemName: "arrow.up.circle.fill") // Consistent circle style
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
+                    .foregroundStyle(canSubmit ? Color.blue : Color.gray.opacity(0.5))
+            }
+            .disabled(!canSubmit || store.isLoading)
+            .keyboardShortcut(.return, modifiers: .command) // Optional: Cmd+Enter shortcut
+        }
+        
+        // --- InputBar Logic ---
+        
+        private var canSubmit: Bool {
+            !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        
+        private func toggleRecording() {
+            focused = false // Dismiss keyboard when interacting with mic
+            if speech.isRecording {
+                speech.stopRecording()
+                // If transcript has content after stopping, handle it (submit or place in input)
+                if !speech.transcript.isEmpty {
+                    input = speech.transcript // Put transcript in input field
+                    // Decide whether to auto-submit or let user press send
+                    // submit() // Uncomment to auto-submit after stopping
+                }
+            } else {
+                input = "" // Clear text input when starting mic
+                speech.requestAuthorization { granted in
+                    if granted {
+                        do { try speech.startRecording() }
+                        catch { speech.errorMessage = "Failed to start recording: \(error.localizedDescription)" }
+                    } else {
+                        speech.errorMessage = "Speech recognition permission needed."
+                        // Consider showing an alert directing user to settings
+                    }
+                }
+            }
+        }
+        
+        private func submit() {
+            let textToSend = input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            : input.trimmingCharacters(in: .whitespacesAndNewlines)
             
-//            func submit() {
-//                let sendText = input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-//                    ? speech.transcript
-//                    : input
-//                if !sendText.isEmpty { store.sendUserMessage(sendText) }
-//                input = ""; speech.transcript = ""; focused = false
-//            }
+            if !textToSend.isEmpty {
+                store.sendUserMessage(textToSend)
+            }
+            // Reset state after sending
+            input = ""
+            speech.transcript = ""
+            if speech.isRecording { speech.stopRecording() } // Ensure recording stops
+            focused = false // Dismiss keyboard
         }
     }
+}
+
+//MARK: - Helper to access @AppStorage defaults from SettingsSheet
+// Needs to be outside `OpenAIChatVoiceDemoView` or static
+extension SettingsSheet {
+    var defaultModelName: String { _modelName.wrappedValue }
+    var defaultTemperature: Double { _temperature.wrappedValue }
+    var defaultMaxTokens: Int { _maxTokens.wrappedValue }
 }
 
 // MARK: - MESSAGE BUBBLE
@@ -520,7 +673,7 @@ struct SettingsSheet: View {
             Form {
                 Section("Chat Backend") {
                     Toggle("Use Mock (offline, for play/testing)", isOn: $useMock)
-                        .onChange(of: useMock) { useMock in
+                        .onChange(of: useMock) {
                             backendSetter(useMock ? MockChatBackend() : RealOpenAIBackend(apiKey: apiKey, model: modelName, temperature: temperature, maxTokens: maxTokens), useMock)
                         }
                 }
@@ -547,24 +700,24 @@ struct SettingsSheet: View {
             }
             .navigationTitle("Settings")
             .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { dismiss() } } }
-            .onChange(of: apiKey) { newKey in
-                if !useMock && !newKey.isEmpty {
-                    backendSetter(RealOpenAIBackend(apiKey: newKey, model: modelName, temperature: temperature, maxTokens: maxTokens), false)
+            .onChange(of: apiKey) {
+                if !useMock && !apiKey.isEmpty {
+                    backendSetter(RealOpenAIBackend(apiKey: apiKey, model: modelName, temperature: temperature, maxTokens: maxTokens), false)
                 }
             }
-            .onChange(of: modelName) { newModel in
+            .onChange(of: modelName) {
                 if !useMock && !apiKey.isEmpty {
-                    backendSetter(RealOpenAIBackend(apiKey: apiKey, model: newModel, temperature: temperature, maxTokens: maxTokens), false)
+                    backendSetter(RealOpenAIBackend(apiKey: apiKey, model: modelName, temperature: temperature, maxTokens: maxTokens), false)
                 }
             }
-            .onChange(of: temperature) { newT in
+            .onChange(of: temperature) {
                 if !useMock && !apiKey.isEmpty {
-                    backendSetter(RealOpenAIBackend(apiKey: apiKey, model: modelName, temperature: newT, maxTokens: maxTokens), false)
+                    backendSetter(RealOpenAIBackend(apiKey: apiKey, model: modelName, temperature: temperature, maxTokens: maxTokens), false)
                 }
             }
-            .onChange(of: maxTokens) { newMax in
+            .onChange(of: maxTokens) {
                 if !useMock && !apiKey.isEmpty {
-                    backendSetter(RealOpenAIBackend(apiKey: apiKey, model: modelName, temperature: temperature, maxTokens: newMax), false)
+                    backendSetter(RealOpenAIBackend(apiKey: apiKey, model: modelName, temperature: temperature, maxTokens: maxTokens), false)
                 }
             }
         }
@@ -617,9 +770,11 @@ struct ProfileSheet: View {
 }
 
 // MARK: - PREVIEW
-
 struct OpenAIChatVoiceDemoView_Previews: PreviewProvider {
     static var previews: some View {
         OpenAIChatVoiceDemoView()
+            .preferredColorScheme(.dark)
+        OpenAIChatVoiceDemoView()
+            .preferredColorScheme(.light)
     }
 }
