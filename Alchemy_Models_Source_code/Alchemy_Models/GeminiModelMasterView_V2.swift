@@ -295,7 +295,7 @@ class LiveAPIService: APIServiceProtocol { /* ... */
                     
                     // --- Map Input/Output types (Requires knowledge of Google API structure) ---
                     // Example: This is a GUESS based on potential fields
-                    var inputTypes: [String] = ["text"] // Default
+                    let inputTypes: [String] = ["text"] // Default
                     var outputTypes: [String] = ["text"] // Default
                     if let methods = apiModel.supportedGenerationMethods {
                         if methods.contains("embedContent") { outputTypes.append("embedding") }
@@ -920,43 +920,101 @@ struct GeminiModelsMasterView: View {
     }
 }
 
-// MARK: - Previews (Updated with new Mock Data)
+// MARK: - Previews (Using Statically Defined Mock Models)
 
-#Preview("Gemini Main View (Table Mock)") {
-//    EmptyView()
-        GeminiModelsMasterView()
+// Preview for the main master view using the Mock API Service logic internally
+#Preview("Gemini Main View (Mock)") {
+    // This view will use the MockAPIService by default (`useMockData = true`)
+    // and fetch the table-based mock data via its .task modifier.
+    GeminiModelsMasterView()
 }
 
-//#Preview("Gemini Featured Card (Table Mock)") {
-//    // Find a model from the new mock data (e.g., 2.5 Pro Preview)
-//    let mockService = MockAPIService()
-//    let previewModel = try! await mockService.fetchModels().first { $0.id == "gemini-2.5-pro-preview-03-25" } ?? GeminiModel(id: "preview-placeholder", name: "Preview", version: "1.0", created: 1, optimizedFor: "Example Optimization")
-//    FeaturedModelCardGemini(model: previewModel)
-//        .padding().frame(width: 320)
-//}
+// Preview for the featured card using a representative mock model
+#Preview("Gemini Featured Card (Table Mock)") {
+    // Manually create a model similar to what MockAPIService provides
+    let previewModel = GeminiModel(
+        id: "gemini-2.5-pro-preview-03-25", // Matches an ID from mock data
+        name: "Gemini 2.5 Pro Preview",
+        version: "2.5",
+        tier: "Pro",
+        created: Int(Date().timeIntervalSince1970 - 10000), // Example timestamp
+        isPreview: true,
+        isExperimental: false,
+        isLive: false,
+        inputTypes: ["audio", "images", "videos", "text"],
+        outputTypes: ["text"],
+        optimizedFor: "Enhanced thinking and reasoning, multimodal understanding, advanced coding, and more",
+        shortDescription: "Enhanced thinking and reasoning...", // Derived
+        detailedDescription: "Enhanced thinking and reasoning, multimodal understanding, advanced coding, and more"
+    )
+    
+    FeaturedModelCardGemini(model: previewModel)
+        .padding().frame(width: 320) // Set frame for card appearance
+}
 
-//#Preview("Gemini Standard Row (Table Mock)") {
-//    let mockService = MockAPIService()
-//    let previewModel = try! await mockService.fetchModels().first { $0.id == "gemini-1.5-flash-8b" } ?? GeminiModel(id: "row-placeholder", name: "Row", version: "1.0", created: 1)
-//    StandardModelRowGemini(model: previewModel)
-//        .padding().previewLayout(.sizeThatFits)
-//}
+// Preview for the standard list row using a representative mock model
+#Preview("Gemini Standard Row (Table Mock)") {
+    // Manually create a model similar to what MockAPIService provides
+    let previewModel = GeminiModel(
+        id: "gemini-1.5-flash-8b", // Matches an ID from mock data
+        name: "Gemini 1.5 Flash-8B",
+        version: "1.5",
+        tier: "Flash-8B",
+        created: Int(Date().timeIntervalSince1970 - 500000), // Example older timestamp
+        isPreview: false,
+        isExperimental: false,
+        isLive: false,
+        inputTypes: ["audio", "images", "videos", "text"],
+        outputTypes: ["text"],
+        optimizedFor: "High volume and lower intelligence tasks",
+        rateLimitLink: URL(string: "https://example.com"), shortDescription: "High volume and lower intelligence tasks",
+        detailedDescription: "Optimized for high volume and lower intelligence tasks." // Example link for icon visibility
+    )
+    StandardModelRowGemini(model: previewModel)
+        .padding() // Add padding for preview visibility
+    
+}
 
-//#Preview("Gemini Detail View (Table Mock)") {
-//    let mockService = MockAPIService()
-//    let previewModel = try! await mockService.fetchModels().first { $0.id == "gemini-2.0-flash" } ?? GeminiModel(id: "detail-placeholder", name: "Detail", version: "1.0", created: 1, inputTypes: ["text", "audio"], outputTypes: ["text", "image"], optimizedFor: "Complex multi-turn conversations.")
-//    NavigationStack { ModelDetailViewGemini(model: previewModel) }
-//}
-
-
-#Preview("Gemini API Key Sheet") {
-    struct SheetPresenter: View {
-        @State var showSheet = true
-        var body: some View {
-            Text("Preview").sheet(isPresented: $showSheet) {
-                APIKeyInputViewGemini(onSave: {_ in}, onCancel: {})
-            }
-        }
+// Preview for the detail view using a representative mock model
+#Preview("Gemini Detail View (Table Mock)") {
+    // Manually create a model similar to what MockAPIService provides
+    let previewModel = GeminiModel(
+        id: "gemini-2.0-flash", // Matches an ID from mock data
+        name: "Gemini 2.0 Flash",
+        version: "2.0",
+        tier: "Flash",
+        created: Int(Date().timeIntervalSince1970 - 300000), // Example timestamp
+        isPreview: false,
+        isExperimental: false, // Note: Output "images (experimental)" parsed away
+        isLive: false,
+        inputTypes: ["audio", "images", "videos", "text"],
+        outputTypes: ["text", "images", "audio"], // Parsed outputs
+        optimizedFor: "Next generation features, speed, thinking, realtime streaming, and multimodal generation",
+        shortDescription: "Next generation features, speed, thinking...",
+        detailedDescription: "Offers next generation features, speed, thinking capabilities, realtime streaming support, and multimodal generation.",
+        capabilities: ["Multimodal", "Realtime Streaming"] // Example added capabilities
+    )
+    NavigationStack { // Wrap in NavigationStack for title display
+        ModelDetailViewGemini(model: previewModel)
     }
-    return SheetPresenter()
 }
+
+// Preview for the API Key Input Sheet
+//#Preview("Gemini API Key Sheet") {
+//    // Helper view to present the sheet
+//    struct SheetPresenter: View {
+//        @State var showSheet = true // State to control sheet presentation
+//        var body: some View {
+//            // Placeholder background content
+//            Text("Background View")
+//                .sheet(isPresented: $showSheet) {
+//                    // Present the APIKeyInputViewGemini
+//                    APIKeyInputViewGemini(
+//                        onSave: { key in print("Preview Save: \(key)") }, // Action for save (optional printing)
+//                        onCancel: { print("Preview Cancelled") }       // Action for cancel (optional printing)
+//                    )
+//                }
+//        }
+//    }
+//    SheetPresenter()
+//}
