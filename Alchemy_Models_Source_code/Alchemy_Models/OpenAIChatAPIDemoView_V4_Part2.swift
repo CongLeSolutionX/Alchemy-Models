@@ -50,13 +50,7 @@ struct OpenAIStreamResponse: Decodable {
     let choices: [Choice]
 }
 
-struct SimpleChatEntry: Identifiable {
-    let id = UUID()
-    let role: ChatRole
-    let content: String
-}
-
-// MARK: - OpenAIService for regular and SSE streaming calls
+// MARK: - Streaming Chat Service
 
 @MainActor
 final class OpenAIStreamingChatService: ObservableObject {
@@ -68,9 +62,7 @@ final class OpenAIStreamingChatService: ObservableObject {
     @Published var errorMessage: String?
     @Published var streamingAssistantReply: String = ""
     
-    // For voice playback
     let tts = AVSpeechSynthesizer()
-    
     var apiKey: String
 
     let model: String
@@ -111,7 +103,9 @@ final class OpenAIStreamingChatService: ObservableObject {
         streamingAssistantReply = ""
 
         guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
-            errorMessage = "Failed to make API url"; isLoading = false; return
+            errorMessage = "Failed to make API url"
+            isLoading = false
+            return
         }
 
         var request = URLRequest(url: url)
@@ -133,7 +127,7 @@ final class OpenAIStreamingChatService: ObservableObject {
             isLoading = false
             return
         }
-        // Use async sequence to stream
+        
         streamingAssistantReply = ""
         do {
             let (inputStream, response) = try await URLSession.shared.bytes(for: request)
@@ -144,8 +138,12 @@ final class OpenAIStreamingChatService: ObservableObject {
             }
 
             if httpResp.statusCode != 200 {
-                let data = try await inputStream.collect(upTo: 4096)
-                if let errStr = String(bytes: data, encoding: .utf8) {
+                // collect first 4096 bytes for error info
+                var buffer = Data()
+                for try await byte in inputStream.prefix(4096) {
+                    buffer.append(byte)
+                }
+                if let errStr = String(data: buffer, encoding: .utf8) {
                     errorMessage = "API Error: \(errStr)"
                 } else {
                     errorMessage = "API error code: \(httpResp.statusCode)"
@@ -156,8 +154,9 @@ final class OpenAIStreamingChatService: ObservableObject {
 
             var assistantReply = ""
             for try await lineData in inputStream.lines {
-                let line = String(decoding: lineData, as: UTF8.self)
-                // Each streaming line looks like: data: {...json...}
+                // lineData is [UInt8]
+                let line = String(data: Data(lineData), encoding: .utf8) ?? ""
+                // Each streaming line: data: {...json...}
                 guard line.hasPrefix("data: ") else { continue }
                 let jsonPart = line.replacingOccurrences(of: "data: ", with: "")
                 if jsonPart == "[DONE]" { break }
@@ -173,7 +172,6 @@ final class OpenAIStreamingChatService: ObservableObject {
             // Finalize message
             messages.append(Message(role: .assistant, content: assistantReply))
             isLoading = false
-            // Speak the response
             speakText(assistantReply)
         } catch {
             errorMessage = "Streaming failed: \(error.localizedDescription)"
@@ -218,7 +216,7 @@ struct OpenAIStreamingChatView: View {
                         }
                         .padding(.vertical, 12)
                         .padding(.bottom, 6)
-                        .onChange(of: chatService.messages.count) {
+                        .onChange(of: chatService.messages.count) { _ in
                             withAnimation { proxy.scrollTo("lastBubble", anchor: .bottom) }
                         }
                     }
@@ -234,7 +232,10 @@ struct OpenAIStreamingChatView: View {
                         ProgressView()
                     }
                     Button {
-                        Task { await chatService.sendUserMessage(); inputIsFocused = true }
+                        Task {
+                            await chatService.sendUserMessage()
+                            inputIsFocused = true
+                        }
                     } label: {
                         Image(systemName: "paperplane.fill")
                             .foregroundColor(chatService.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .blue)
