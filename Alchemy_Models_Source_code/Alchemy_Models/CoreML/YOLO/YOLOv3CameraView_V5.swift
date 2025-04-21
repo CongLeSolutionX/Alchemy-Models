@@ -37,11 +37,11 @@ enum YOLOModel: String, CaseIterable, Identifiable {
     func loadModel() -> MLModel? {
         // Xcode generates classes matching the mlpackage name
         switch self {
-        case .yolo11l: return try? yolo11l(configuration: .init()).model
-        case .yolo11m: return try? yolo11m(configuration: .init()).model
-        case .yolo11n: return try? yolo11n(configuration: .init()).model
-        case .yolo11s: return try? yolo11s(configuration: .init()).model
-        case .yolo11x: return try? yolo11x(configuration: .init()).model
+        case .yolo11l: return try? YOLOModel.yolo11l(configuration: MLModelConfiguration()).model
+        case .yolo11m: return try? YOLOModel.yolo11m(configuration: MLModelConfiguration()).model
+        case .yolo11n: return try? YOLOModel.yolo11n(configuration: MLModelConfiguration()).model
+        case .yolo11s: return try? YOLOModel.yolo11s(configuration: MLModelConfiguration()).model
+        case .yolo11x: return try? YOLOModel.yolo11x(configuration: MLModelConfiguration()).model
         }
     }
 }
@@ -57,26 +57,26 @@ class CameraViewModel: NSObject, ObservableObject {
     @Published var isSessionRunning: Bool = false
     @Published var modelLoadError: String? = nil
     @Published var fps: Double = 0
-
+    
     let session = AVCaptureSession()
     private var visionRequest: VNCoreMLRequest?
     private var cancellables = Set<AnyCancellable>()
-
+    
     // For FPS calculation
     private var lastTimestamp: CFTimeInterval = 0
-
+    
     override init() {
         super.init()
         configureSession()
         bindModelSelection()
     }
-
+    
     // MARK: Session Setup
-
+    
     private func configureSession() {
         session.beginConfiguration()
         session.sessionPreset = .high
-
+        
         // Camera input
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera,
                                                    for: .video,
@@ -88,7 +88,7 @@ class CameraViewModel: NSObject, ObservableObject {
             return
         }
         session.addInput(input)
-
+        
         // Video output
         let output = AVCaptureVideoDataOutput()
         output.videoSettings = [
@@ -100,17 +100,17 @@ class CameraViewModel: NSObject, ObservableObject {
                                        queue: DispatchQueue(label: "videoQueue",
                                                             qos: .userInitiated))
         session.addOutput(output)
-
+        
         // Lock orientation to portrait
         if let conn = output.connection(with: .video), conn.isVideoOrientationSupported {
             conn.videoOrientation = .portrait
         }
-
+        
         session.commitConfiguration()
     }
-
+    
     // MARK: Model Loading
-
+    
     private func bindModelSelection() {
         // Whenever selectedModel changes, reload the Vision request
         $selectedModel
@@ -120,13 +120,13 @@ class CameraViewModel: NSObject, ObservableObject {
             }
             .store(in: &cancellables)
     }
-
+    
     private func load(model: YOLOModel) {
         DispatchQueue.main.async {
             self.modelLoadError = nil
             self.detections = []
         }
-
+        
         guard let mlModel = model.loadModel(),
               let vnModel = try? VNCoreMLModel(for: mlModel)
         else {
@@ -136,19 +136,19 @@ class CameraViewModel: NSObject, ObservableObject {
             }
             return
         }
-
+        
         let request = VNCoreMLRequest(model: vnModel, completionHandler: handleDetections)
         request.imageCropAndScaleOption = .scaleFill
         visionRequest = request
     }
-
+    
     // MARK: Start / Stop
-
+    
     func toggleSession() {
         if session.isRunning { stop() }
         else { start() }
     }
-
+    
     func start() {
         guard !session.isRunning else { return }
         DispatchQueue.global(qos: .userInitiated).async {
@@ -156,7 +156,7 @@ class CameraViewModel: NSObject, ObservableObject {
             DispatchQueue.main.async { self.isSessionRunning = true }
         }
     }
-
+    
     func stop() {
         guard session.isRunning else { return }
         DispatchQueue.global(qos: .userInitiated).async {
@@ -164,9 +164,9 @@ class CameraViewModel: NSObject, ObservableObject {
             DispatchQueue.main.async { self.isSessionRunning = false }
         }
     }
-
+    
     // MARK: Handling Vision Results
-
+    
     private func handleDetections(request: VNRequest, error: Error?) {
         if let err = error {
             DispatchQueue.main.async {
@@ -174,7 +174,7 @@ class CameraViewModel: NSObject, ObservableObject {
             }
             return
         }
-
+        
         guard let observations = request.results as? [VNRecognizedObjectObservation]
         else {
             // Wrong output type
@@ -183,7 +183,7 @@ class CameraViewModel: NSObject, ObservableObject {
             }
             return
         }
-
+        
         // Filter by confidence threshold
         let filtered: [Detection] = observations.compactMap { obs in
             guard let label = obs.labels.first,
@@ -193,12 +193,12 @@ class CameraViewModel: NSObject, ObservableObject {
                              label: label.identifier,
                              confidence: label.confidence)
         }
-
+        
         // Compute FPS
         let now = CACurrentMediaTime()
         let currentFPS = lastTimestamp > 0 ? 1 / (now - lastTimestamp) : 0
         lastTimestamp = now
-
+        
         // Publish updates
         DispatchQueue.main.async {
             self.fps = currentFPS
@@ -220,7 +220,7 @@ extension CameraViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
         guard let req = visionRequest,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
         else { return }
-
+        
         // Pass the buffer into the Vision handler
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer,
                                             orientation: .up,
@@ -238,7 +238,7 @@ fileprivate class PreviewView: UIView {
 
 fileprivate struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
-
+    
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         let pl = view.previewLayer
@@ -249,7 +249,7 @@ fileprivate struct CameraPreview: UIViewRepresentable {
         }
         return view
     }
-
+    
     func updateUIView(_ uiView: PreviewView, context: Context) {}
 }
 
@@ -257,13 +257,13 @@ fileprivate struct CameraPreview: UIViewRepresentable {
 
 struct YOLOCameraView: View {
     @StateObject private var vm = CameraViewModel()
-
+    
     var body: some View {
         NavigationView {
             ZStack {
                 CameraPreview(session: vm.session)
                     .ignoresSafeArea()
-
+                
                 // MARK: — Detections Overlay
                 if vm.showBoxes {
                     GeometryReader { geo in
@@ -272,7 +272,7 @@ struct YOLOCameraView: View {
                         }
                     }
                 }
-
+                
                 // MARK: — Top Info (Model / Count / FPS)
                 VStack {
                     HStack(spacing: 12) {
@@ -289,11 +289,11 @@ struct YOLOCameraView: View {
                     .padding([.horizontal, .top])
                     Spacer()
                 }
-
+                
                 // MARK: — Bottom Controls
                 VStack(spacing: 12) {
                     Spacer()
-
+                    
                     // Confidence Slider
                     HStack {
                         Text("Thresh: \(Int(vm.confidenceThreshold * 100))%")
@@ -306,7 +306,7 @@ struct YOLOCameraView: View {
                     .foregroundColor(.white)
                     .cornerRadius(8)
                     .padding(.horizontal)
-
+                    
                     // Model Picker
                     Picker("", selection: $vm.selectedModel) {
                         ForEach(YOLOModel.allCases) { m in
@@ -315,10 +315,10 @@ struct YOLOCameraView: View {
                     }
                     .pickerStyle(.segmented)
                     .padding(.horizontal)
-
+                    
                 } // VStack
                 .padding(.bottom, 20)
-
+                
                 // MARK: — Error Banner
                 if let err = vm.modelLoadError {
                     VStack {
@@ -342,8 +342,8 @@ struct YOLOCameraView: View {
                         Image(systemName: vm.isSessionRunning
                               ? "pause.circle.fill"
                               : "play.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.white)
+                        .font(.title2)
+                        .foregroundColor(.white)
                     }
                 }
                 // Right: Toggle Boxes
@@ -354,8 +354,8 @@ struct YOLOCameraView: View {
                         Image(systemName: vm.showBoxes
                               ? "eye.fill"
                               : "eye.slash.fill")
-                            .font(.title2)
-                            .foregroundColor(.white)
+                        .font(.title2)
+                        .foregroundColor(.white)
                     }
                 }
             }
@@ -365,7 +365,7 @@ struct YOLOCameraView: View {
         }
         .statusBarHidden(true)
     }
-
+    
     // MARK: — Single Detection View
     @ViewBuilder
     private func detectionView(_ det: Detection, in size: CGSize) -> some View {
@@ -373,13 +373,13 @@ struct YOLOCameraView: View {
         let y = (1 - det.boundingBox.maxY) * size.height
         let w = det.boundingBox.width * size.width
         let h = det.boundingBox.height * size.height
-
+        
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 4)
                 .stroke(Color.orange, lineWidth: 2)
                 .frame(width: w, height: h)
                 .position(x: x + w/2, y: y + h/2)
-
+            
             Text("\(det.label) \(Int(det.confidence * 100))%")
                 .font(.caption2.bold())
                 .padding(4)
