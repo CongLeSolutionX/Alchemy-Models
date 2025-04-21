@@ -18,7 +18,8 @@ struct Alchemy_ModelsApp: App {
             //RootView()
             //OpenAIChatVoiceDemoVietnamese()
             //ChatDemoView()
-            CoreMLImageClassifierView()
+            //CoreMLImageClassifierView()
+            Resnet50ClassifierView()
         }
     }
 }
