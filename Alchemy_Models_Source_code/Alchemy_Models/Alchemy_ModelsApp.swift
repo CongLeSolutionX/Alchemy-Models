@@ -17,6 +17,7 @@ struct Alchemy_ModelsApp: App {
             //OpenAIStreamingChatView()
             //RootView()
             //OpenAIChatVoiceDemoEnhanced()
+            OpenAIChatVoiceDemoVietnamese()
         }
     }
 }
