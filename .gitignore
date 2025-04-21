@@ -4,3 +4,4 @@ Alchemy_Models_Source_code/Alchemy_Models/CoreML/MobileNet/MobileNetV2.mlmodel
 Alchemy_Models_Source_code/Alchemy_Models/CoreML/YOLO/YOLOv3.mlmodel
 Alchemy_Models_Source_code/Alchemy_Models/CoreML/YOLO/YOLOv3Tiny.mlmodel
 Alchemy_Models_Source_code/Alchemy_Models/CoreML/Resnet50/Resnet50.mlmodel
+Alchemy_Models_Source_code/Alchemy_Models/ULTRALYTICS/YOLO/YOLOv3/YOLOv3FP16.mlmodel
