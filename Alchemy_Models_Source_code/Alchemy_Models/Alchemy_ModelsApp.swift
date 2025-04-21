@@ -20,8 +20,8 @@ struct Alchemy_ModelsApp: App {
             //ChatDemoView()
             //CoreMLImageClassifierView()
             //Resnet50ClassifierView()
-            YOLOv3CameraView()
-            //YOLOCameraView()
+            //YOLOv3CameraView()
+            YOLOCameraView()
         }
     }
 }

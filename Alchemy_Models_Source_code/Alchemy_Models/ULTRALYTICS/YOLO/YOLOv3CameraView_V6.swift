@@ -253,35 +253,33 @@ class CameraViewModel: NSObject, ObservableObject {
         print("✅ Successfully created Vision request for \(model.displayName)")
     }
     
-    // MARK: Start / Stop (No changes needed)
-    
-    func toggleSession() {
-        if session.isRunning { stop() }
-        else { start() }
-    }
-    
-    func start() {
-        guard !session.isRunning else { return }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.session.startRunning()
-            DispatchQueue.main.async { // Switch back to main thread for UI update
-                self?.isSessionRunning = true
-            }
+    // MARK: Start / Stop
+
+        func toggleSession() { // Already on MainActor
+            if session.isRunning { stop() }
+            else { start() }
         }
-    }
-    
-    func stop() {
-        guard session.isRunning else { return }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.session.stopRunning()
-            DispatchQueue.main.async { // Switch back to main thread for UI update
-                self?.isSessionRunning = false
-                // Clear detections when stopping
-                self?.detections = []
-                self?.fps = 0
-            }
+
+        func start() { // Already on MainActor
+            guard !session.isRunning else { return }
+            // Execute directly on the Main Actor
+            session.startRunning()
+            // Update published property directly on Main Actor
+            isSessionRunning = true
+            // No DispatchQueue needed here anymore
         }
-    }
+
+        func stop() { // Already on MainActor
+            guard session.isRunning else { return }
+            // Execute directly on the Main Actor
+            session.stopRunning()
+            // Update published properties directly on Main Actor
+            isSessionRunning = false
+            // Clear detections when stopping (already on MainActor)
+            detections = []
+            fps = 0
+           // No DispatchQueue needed here anymore
+        }
     
     // MARK: Handling Vision Results (Threshold filtering remains here for broader iOS support)
     
@@ -300,7 +298,7 @@ class CameraViewModel: NSObject, ObservableObject {
             // or if there are simply no detections.
             self.detections = [] // Clear previous detections
             // Optional: print a warning if you expect observations
-            // print("⚠️ Received no observations or observations are not VNRecognizedObjectObservation.")
+             print("⚠️ Received no observations or observations are not VNRecognizedObjectObservation.")
             return
         }
         
