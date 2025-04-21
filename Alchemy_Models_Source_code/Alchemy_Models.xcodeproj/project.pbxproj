@@ -400,7 +400,9 @@
 				DEVELOPMENT_TEAM = 99WD9D6Y46;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs to access your camera.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app uses the microphone for voice commands.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "This app needs access to the photo library to save and share photos and videos.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Speech recognition is used for voice chat input.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -432,7 +434,9 @@
 				DEVELOPMENT_TEAM = 99WD9D6Y46;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs to access your camera.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app uses the microphone for voice commands.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "This app needs access to the photo library to save and share photos and videos.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Speech recognition is used for voice chat input.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

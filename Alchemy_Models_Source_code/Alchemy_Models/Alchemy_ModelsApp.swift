@@ -19,7 +19,8 @@ struct Alchemy_ModelsApp: App {
             //OpenAIChatVoiceDemoVietnamese()
             //ChatDemoView()
             //CoreMLImageClassifierView()
-            Resnet50ClassifierView()
+            //Resnet50ClassifierView()
+            YOLOv3CameraView()
         }
     }
 }
