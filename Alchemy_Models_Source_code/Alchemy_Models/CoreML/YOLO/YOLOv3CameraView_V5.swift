@@ -154,9 +154,11 @@ class CameraViewModel: NSObject, ObservableObject {
         // it's often best practice to ensure the ViewModel runs on the MainActor.
         // If you add @MainActor to the class definition, you can remove
         // these explicit DispatchQueue.main.async blocks.
-        self.modelLoadError = nil
-        self.detections = []
-        
+        // For now, let's keep them for clarity if the class isn't MainActor yet.
+        await MainActor.run { // Use MainActor.run for async main thread updates
+            self.modelLoadError = nil
+            self.detections = []
+        }
         
         // Load the model (this part can remain potentially blocking or async)
         guard let mlModel = await model.loadModel(),
@@ -249,9 +251,7 @@ class CameraViewModel: NSObject, ObservableObject {
 }
 
 // MARK: — AVCapture Delegate
-// Optional but Recommended: Make the ViewModel run on the Main Actor
-// Add this annotation right before the class definition:
-@MainActor
+
 extension CameraViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
