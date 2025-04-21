@@ -36,7 +36,7 @@ class CameraViewModel: NSObject, ObservableObject {
     
     private func configureModel() {
         // Load the compiled YOLOv3.mlmodelc from your bundle
-        guard let model = try? YOLOv3(configuration: .init()).model,
+        guard let model = try? yolo11n(configuration: .init()).model,
               let vnModel = try? VNCoreMLModel(for: model)
         else {
             print("❌ Failed to load YOLOv3")
