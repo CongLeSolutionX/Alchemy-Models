@@ -27,23 +27,41 @@ enum YOLOModel: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .yolo11l: return "YOLO11‑L"
-        case .yolo11m: return "YOLO11‑M"
-        case .yolo11n: return "YOLO11‑N"
-        case .yolo11s: return "YOLO11‑S"
-        case .yolo11x: return "YOLO11‑XL"
+        case .yolo11l: return "YOLO11-L"
+        case .yolo11m: return "YOLO11-M"
+        case .yolo11n: return "YOLO11-N"
+        case .yolo11s: return "YOLO11-S"
+        case .yolo11x: return "YOLO11-XL"
         }
     }
-    func loadModel() -> MLModel? {
-        // Xcode generates classes matching the mlpackage name
-        switch self {
-        case .yolo11l: return try? YOLOModel.yolo11l(configuration: MLModelConfiguration()).model
-        case .yolo11m: return try? YOLOModel.yolo11m(configuration: MLModelConfiguration()).model
-        case .yolo11n: return try? YOLOModel.yolo11n(configuration: MLModelConfiguration()).model
-        case .yolo11s: return try? YOLOModel.yolo11s(configuration: MLModelConfiguration()).model
-        case .yolo11x: return try? YOLOModel.yolo11x(configuration: MLModelConfiguration()).model
+    
+    // --- Alternative loadModel Implementation ---
+    func loadModel() async -> MLModel? {
+        // 1. Get the base name (same as the .mlpackage file name)
+        let modelName = self.rawValue
+        
+        // 2. Find the URL for the compiled model (.mlmodelc) in the bundle
+        guard let modelURL = Bundle.main.url(forResource: modelName,
+                                             withExtension: "mlmodelc") else {
+            print("Error: Failed to find compiled model '\(modelName).mlmodelc' in the bundle.")
+            return nil
+        }
+        
+        // 3. Load the MLModel from the URL
+        do {
+            let configuration = MLModelConfiguration()
+            // You could configure GPU/ANE usage here if desired:
+            // configuration.computeUnits = .all
+            
+            let loadedModel = try await MLModel.load(contentsOf: modelURL, configuration: configuration)
+            print("Successfully loaded model \(modelName) from URL.")
+            return loadedModel
+        } catch {
+            print("Error: Failed to load model '\(modelName)' from URL \(modelURL): \(error)")
+            return nil
         }
     }
+    // --- End of alternative implementation ---
 }
 
 // MARK: — Camera + Vision ViewModel
@@ -121,13 +139,13 @@ class CameraViewModel: NSObject, ObservableObject {
             .store(in: &cancellables)
     }
     
-    private func load(model: YOLOModel) {
+    private func load(model: YOLOModel) async {
         DispatchQueue.main.async {
             self.modelLoadError = nil
             self.detections = []
         }
         
-        guard let mlModel = model.loadModel(),
+        guard let mlModel = await model.loadModel(),
               let vnModel = try? VNCoreMLModel(for: mlModel)
         else {
             DispatchQueue.main.async {
