@@ -56,9 +56,9 @@ struct Conversation: Identifiable, Codable, Hashable {
 
 protocol ChatBackend {
     func streamChat(
-      messages: [Message],
-      systemPrompt: String,
-      completion: @escaping (Result<String, Error>) -> Void
+        messages: [Message],
+        systemPrompt: String,
+        completion: @escaping (Result<String, Error>) -> Void
     )
 }
 
@@ -262,7 +262,7 @@ final class ChatStore: ObservableObject {
         ])
     ]
     @Published var currentConversation: Conversation =
-        Conversation(messages: [.system("You are a helpful assistant. Answer concisely.")])
+    Conversation(messages: [.system("You are a helpful assistant. Answer concisely.")])
     
     // UI state
     @Published var input: String = ""
@@ -509,7 +509,7 @@ struct OpenAIChatVoiceDemoEnhanced: View {
         }
         ToolbarItem(placement: .navigationBarTrailing) {
             Button { store.resetConversation() }
-//                .disabled(store.isLoading)
+            //                .disabled(store.isLoading)
             label: { Label("New Chat", systemImage: "plus.circle") }
         }
     }
@@ -534,7 +534,7 @@ struct ChatInputBar: View {
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .overlay(RoundedRectangle(cornerRadius: 18)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1))
+                    .stroke(Color.gray.opacity(0.3), lineWidth: 1))
                 .disabled(store.isLoading)
             
             micButton
@@ -623,31 +623,30 @@ struct MessageBubble: View {
 }
 
 // MARK: - SETTINGS SHEET
-// MARK: - SETTINGS SHEET (MODIFICATIONS HERE)
 
 struct SettingsSheet: View {
     // Receive bindings from the parent view
     @Binding var useMock: Bool
     @Binding var apiKey: String
     @Binding var ttsEnabled: Bool // <-- Receive TTS toggle binding
-
+    
     // Keep internal @AppStorage for local persistence of these settings
     @AppStorage("model_name") private var modelName: String = "gpt-4o"
     @AppStorage("temperature") private var temperature: Double = 0.7
     @AppStorage("max_tokens") private var maxTokens: Int = 384
-
+    
     var backendSetter: (ChatBackend, Bool) -> Void
-
+    
     let models = ["gpt-4o", "gpt-4", "gpt-3.5-turbo"]
     @Environment(\.dismiss) var dismiss
-
+    
     var body: some View {
         NavigationStack {
             Form {
                 Section("Features") { // New section for features
                     Toggle("Enable Voice Reply (TTS)", isOn: $ttsEnabled) // <-- Toggle for TTS
                 }
-
+                
                 Section("Chat Backend") {
                     Toggle("Use Mock (offline, for play/testing)", isOn: $useMock)
                         .onChange(of: useMock) { _, newValue in // Use new signature
@@ -659,23 +658,23 @@ struct SettingsSheet: View {
                         ForEach(models, id:\.self) { Text($0) }
                     }
                     .onChange(of: modelName) { _, _ in updateBackend() } // Update on change
-
+                    
                     Stepper(value: $temperature, in: 0...1, step: 0.05) {
                         Text("Temperature: \(temperature, specifier: "%.2f")")
                     }
                     .onChange(of: temperature) { _, _ in updateBackend() } // Update on change
-
+                    
                     Stepper(value: $maxTokens, in: 64...2048, step: 32) {
                         Text("Max Tokens: \(maxTokens)")
                     }
-                     .onChange(of: maxTokens) { _, _ in updateBackend() } // Update on change
+                    .onChange(of: maxTokens) { _, _ in updateBackend() } // Update on change
                 }
                 if !useMock {
                     Section("API Key") {
                         SecureField("OpenAI API Key (sk-...)", text: $apiKey)
                             .autocapitalization(.none)
                             .onChange(of: apiKey) { _, _ in updateBackend() } // Update on change
-
+                        
                         if apiKey.isEmpty {
                             Text("🔑 Enter your OpenAI API key to use Real backend.").font(.footnote)
                         }
@@ -684,98 +683,30 @@ struct SettingsSheet: View {
             }
             .navigationTitle("Settings")
             .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { dismiss() } } }
-             // Removed individual .onChange handlers, combined into updateBackend
+            // Removed individual .onChange handlers, combined into updateBackend
         }
     }
-
+    
     // Helper function to update backend based on current settings
     private func updateBackend(useMock: Bool? = nil) {
-         let shouldUseMock = useMock ?? self.useMock // Use passed value or current state
-         // Only update Real backend if not using mock and API key is present
-         if !shouldUseMock && !apiKey.isEmpty {
-             backendSetter(RealOpenAIBackend(
-                 apiKey: apiKey,
-                 model: modelName,
-                 temperature: temperature,
-                 maxTokens: maxTokens
-             ), false)
-         } else if shouldUseMock {
-             // Ensure mock is set correctly if toggled or if API key is missing
-             backendSetter(MockChatBackend(), true)
-         }
-         // Note: If useMock is false but apiKey is empty, backendSetter won't be called here.
-         // This implicitly keeps the existing backend (which might be Mock). Consider explicitly
-         // setting to Mock if apiKey becomes empty while useMock is false if desired.
-     }
+        let shouldUseMock = useMock ?? self.useMock // Use passed value or current state
+        // Only update Real backend if not using mock and API key is present
+        if !shouldUseMock && !apiKey.isEmpty {
+            backendSetter(RealOpenAIBackend(
+                apiKey: apiKey,
+                model: modelName,
+                temperature: temperature,
+                maxTokens: maxTokens
+            ), false)
+        } else if shouldUseMock {
+            // Ensure mock is set correctly if toggled or if API key is missing
+            backendSetter(MockChatBackend(), true)
+        }
+        // Note: If useMock is false but apiKey is empty, backendSetter won't be called here.
+        // This implicitly keeps the existing backend (which might be Mock). Consider explicitly
+        // setting to Mock if apiKey becomes empty while useMock is false if desired.
+    }
 }
-//
-//struct SettingsSheet: View {
-//    @Binding var useMock: Bool
-//    @Binding var apiKey: String
-//    @Binding var ttsEnabled: Bool
-//    @AppStorage("model_name") private var modelName = "gpt-4o"
-//    @AppStorage("temperature") private var temperature = 0.7
-//    @AppStorage("max_tokens") private var maxTokens = 384
-//    var backendSetter: (ChatBackend, Bool) -> Void
-//    @Environment(\.dismiss) private var dismiss
-//    
-//    let models = ["gpt-4o", "gpt-4", "gpt-3.5-turbo"]
-//    
-//    var body: some View {
-//        NavigationStack {
-//            Form {
-//                Section("Features") {
-//                    Toggle("Enable Voice Reply (TTS)", isOn: $ttsEnabled)
-//                }
-//                Section("Chat Backend") {
-//                    Toggle("Use Mock (offline)", isOn: $useMock)
-//                        .onChange(of: useMock) { updateBackend() }
-//                }
-//                Section("OpenAI") {
-//                    Picker("Model", selection: $modelName) {
-//                        ForEach(models, id: \.self) { Text($0) }
-//                    }.onChange(of: modelName) { updateBackend() }
-//                    Stepper("Temperature: \(temperature, specifier: "%.2f")",
-//                            value: $temperature, in: 0...1, step: 0.05)
-//                        .onChange(of: temperature) { updateBackend() }
-//                    Stepper("Max Tokens: \(maxTokens)",
-//                            value: $maxTokens, in: 64...2048, step: 32)
-//                        .onChange(of: maxTokens) { updateBackend() }
-//                }
-//                if !useMock {
-//                    Section("API Key") {
-//                        SecureField("sk-...", text: $apiKey)
-//                            .autocapitalization(.none)
-//                            .onChange(of: apiKey) { updateBackend() }
-//                        if apiKey.isEmpty {
-//                            Text("Enter your OpenAI API key.").font(.footnote)
-//                        }
-//                    }
-//                }
-//            }
-//            .navigationTitle("Settings")
-//            .toolbar {
-//                ToolbarItem(placement: .confirmationAction) {
-//                    Button("Done") { dismiss() }
-//                }
-//            }
-//        }
-//    }
-//    
-//    private func updateBackend() {
-//        if !useMock && !apiKey.isEmpty {
-//            let real = RealOpenAIBackend(
-//                apiKey: apiKey,
-//                model: modelName,
-//                temperature: temperature,
-//                maxTokens: maxTokens
-//            )
-//            backendSetter(real, false)
-//        } else {
-//            backendSetter(MockChatBackend(), true)
-//        }
-//    }
-//}
 
 // MARK: - HISTORY SHEET
 
