@@ -284,8 +284,14 @@ fileprivate struct CameraPreview: UIViewRepresentable {
         let pl = view.previewLayer
         pl.session = session
         pl.videoGravity = .resizeAspectFill
-        if let conn = pl.connection, conn.isVideoOrientationSupported {
-            conn.videoOrientation = .portrait
+        
+        if let conn = pl.connection {
+            if #available(iOS 17.0, *) {
+                // 0° = portrait, 90 = .landscapeRight, 180 = .portraitUpsideDown, 270 = .landscapeLeft
+                conn.videoRotationAngle = 90
+            } else {
+                conn.videoOrientation = .portrait
+            }
         }
         return view
     }
