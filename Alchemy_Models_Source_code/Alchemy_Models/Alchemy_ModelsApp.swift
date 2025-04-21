@@ -13,9 +13,10 @@ struct Alchemy_ModelsApp: App {
         WindowGroup {
             //ContentView()
             //AIMultiProviderExplorerView()
-            OpenAIChatVoiceDemoView()
+            //OpenAIChatVoiceDemoView()
             //OpenAIStreamingChatView()
             //RootView()
+            OpenAIChatVoiceDemoEnhanced()
         }
     }
 }
