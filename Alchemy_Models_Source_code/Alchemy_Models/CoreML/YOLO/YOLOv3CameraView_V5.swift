@@ -119,9 +119,14 @@ class CameraViewModel: NSObject, ObservableObject {
                                                             qos: .userInitiated))
         session.addOutput(output)
         
-        // Lock orientation to portrait
-        if let conn = output.connection(with: .video), conn.isVideoOrientationSupported {
-            conn.videoOrientation = .portrait
+        // >>> Replace deprecated videoOrientation with videoRotationAngle
+        if let conn = output.connection(with: .video){
+            if #available(iOS 17.0, *) {
+                // 0° = portrait, 90 = .landscapeRight, 180 = .portraitUpsideDown, 270 = .landscapeLeft
+                conn.videoRotationAngle = 90
+            } else {
+                conn.videoOrientation = .portrait
+            }
         }
         
         session.commitConfiguration()
