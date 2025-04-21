@@ -132,32 +132,52 @@ class CameraViewModel: NSObject, ObservableObject {
     private func bindModelSelection() {
         // Whenever selectedModel changes, reload the Vision request
         $selectedModel
+        // Receiving on a background queue is fine, but the Task will handle the async work
             .receive(on: DispatchQueue.global(qos: .userInitiated))
             .sink { [weak self] model in
-                self?.load(model: model)
+                // --- SOLUTION: Wrap the async call in a Task ---
+                Task {
+                    // Ensure self is still valid within the async Task
+                    guard let self = self else { return }
+                    // Call the async function using await inside the Task
+                    await self.load(model: model)
+                }
+                // --- End of Solution ---
             }
             .store(in: &cancellables)
     }
     
+    
+    // The load function remains async
     private func load(model: YOLOModel) async {
-        DispatchQueue.main.async {
-            self.modelLoadError = nil
-            self.detections = []
-        }
+        // Since you're likely updating @Published properties that affect the UI,
+        // it's often best practice to ensure the ViewModel runs on the MainActor.
+        // If you add @MainActor to the class definition, you can remove
+        // these explicit DispatchQueue.main.async blocks.
+        self.modelLoadError = nil
+        self.detections = []
         
+        
+        // Load the model (this part can remain potentially blocking or async)
         guard let mlModel = await model.loadModel(),
               let vnModel = try? VNCoreMLModel(for: mlModel)
         else {
-            DispatchQueue.main.async {
+            await MainActor.run { // Update UI properties on the main thread
                 self.modelLoadError = "Failed to load \(model.rawValue)"
                 self.visionRequest = nil
             }
             return
         }
         
+        // Create the request (this is quick)
         let request = VNCoreMLRequest(model: vnModel, completionHandler: handleDetections)
         request.imageCropAndScaleOption = .scaleFill
-        visionRequest = request
+        
+        // Update the visionRequest property (needs main thread if UI depends on it indirectly)
+        await MainActor.run {
+            self.visionRequest = request
+            print("Successfully created Vision request for \(model.displayName)") // Added log
+        }
     }
     
     // MARK: Start / Stop
@@ -229,7 +249,9 @@ class CameraViewModel: NSObject, ObservableObject {
 }
 
 // MARK: — AVCapture Delegate
-
+// Optional but Recommended: Make the ViewModel run on the Main Actor
+// Add this annotation right before the class definition:
+@MainActor
 extension CameraViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
