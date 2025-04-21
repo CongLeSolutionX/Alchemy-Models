@@ -1,1 +1,6 @@
-Alchemy_Models_Source_code/Alchemy_Models/OpenAIChatAPIDemoView/CoreML/YOLO/YOLOv3.mlmodel
+Alchemy_Models_Source_code/Alchemy_Models/CoreML/MobileNet/MobileNet.mlmodel
+Alchemy_Models_Source_code/Alchemy_Models/CoreML/MobileNet/MobileNetV2.mlmodel
+.gitignore
+Alchemy_Models_Source_code/Alchemy_Models/CoreML/YOLO/YOLOv3.mlmodel
+Alchemy_Models_Source_code/Alchemy_Models/CoreML/YOLO/YOLOv3Tiny.mlmodel
+Alchemy_Models_Source_code/Alchemy_Models/CoreML/Resnet50/Resnet50.mlmodel
