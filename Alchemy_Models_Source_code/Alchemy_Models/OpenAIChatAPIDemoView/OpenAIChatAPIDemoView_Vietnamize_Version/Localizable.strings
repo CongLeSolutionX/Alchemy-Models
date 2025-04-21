@@ -1,0 +1,51 @@
+//
+//  Localizable.strings
+//  Alchemy_Models
+//
+//  Created by Cong Le on 4/20/25.
+//
+
+"chat.default_title" = "Chat";
+"assistant.prompt" = "You are a helpful assistant.";
+"response.no_text" = "No response";
+"conversation.default_title"= "Chat";
+
+"input.placeholder" = "Type or hold to speak…";
+"input.hold_to_talk" = "Hold to talk";
+"input.release_to_send" = "Release to send";
+
+"loading.thinking" = "Thinking…";
+
+"toolbar.history" = "History";
+"toolbar.settings" = "Settings";
+"toolbar.new_chat" = "New Chat";
+
+"settings.title" = "Settings";
+"settings.features" = "Features";
+"settings.enable_tts" = "Enable Voice Reply (TTS)";
+
+"settings.backend" = "Chat Backend";
+"settings.use_mock" = "Use Mock (offline, for play/testing)";
+
+"settings.openai_config" = "OpenAI Configuration";
+"settings.model" = "Model";
+"settings.temperature" = "Temperature: %.2f";
+"settings.max_tokens" = "Max Tokens: %d";
+
+"settings.api_key_section" = "API Key";
+"settings.api_key_placeholder" = "OpenAI API Key (sk-...)";
+"settings.api_key_hint" = "🔑 Enter your OpenAI API key to use Real backend.";
+
+"error.no_mic_permission" = "Mic permission needed.";
+
+"alert.error_title" = "Error";
+"alert.ok" = "OK";
+
+"history.no_chats" = "No chats yet.";
+"history.close" = "Close";
+
+"context.copy" = "Copy";
+"context.read_aloud" = "Read Aloud";
+"context.share" = "Share";
+
+"response.no_text" = "No response";
