@@ -213,7 +213,7 @@ enum BackendType: String, CaseIterable, Identifiable {
 }
 
 // Implementation using a local CoreML model (Placeholder)
-struct CoreMLChatBackend: ChatBackend {
+final class CoreMLChatBackend: ChatBackend { // Changed struct to final class
     let modelName: String
     lazy var coreModel: MLModel? = {
         // Attempt to load the compiled CoreML model
@@ -222,20 +222,30 @@ struct CoreMLChatBackend: ChatBackend {
             return nil
         }
         do {
-            return try MLModel(contentsOf: url)
+            print("Attempting to load CoreML model at URL: \(url.path)") // Added print
+            let model = try MLModel(contentsOf: url)
+            print("Successfully loaded CoreML model: \(modelName)") // Added print
+            return model
         } catch {
             print("Error loading CoreML model '\(modelName)': \(error)")
             return nil
         }
-    }()
+    }() // Ensure the () are here to execute the closure for lazy init
+
+    init(modelName: String) { // Add an initializer for the class
+        self.modelName = modelName
+        // You could optionally trigger lazy loading here if desired, but lazy usually means on first use
+        // _ = self.coreModel
+    }
 
     func streamChat(
         messages: [Message],
         systemPrompt: String,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
+        // Accessing coreModel here is now allowed because it's a class
         guard let model = coreModel else {
-            let error = NSError(domain: "CoreMLError", code: 1, userInfo: [NSLocalizedDescriptionKey: "CoreML model not loaded."])
+            let error = NSError(domain: "CoreMLError", code: 1, userInfo: [NSLocalizedDescriptionKey: "CoreML model '\(modelName)' could not be loaded."]) // Improved error message
             DispatchQueue.main.async { completion(.failure(error)) }
             return
         }
@@ -256,7 +266,6 @@ struct CoreMLChatBackend: ChatBackend {
         }
     }
 }
-
 // MARK: — 3. Speech Recognizer (Speech-to-Text)
 
 final class SpeechRecognizer: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
