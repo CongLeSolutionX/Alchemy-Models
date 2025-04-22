@@ -458,7 +458,7 @@ final class ChatStore: ObservableObject {
     // Settings synced with UserDefaults
     @AppStorage("system_prompt") var systemPrompt: String = "Bạn là một trợ lý AI hữu ích nói tiếng Việt."
     @AppStorage("tts_enabled") var ttsEnabled: Bool = false
-    @AppStorage("tts_rate") var ttsRate: Float = 1.0 //AVSpeechUtteranceDefaultSpeechRate * 1.0 // Default rate
+    @AppStorage("tts_rate") var ttsRate: Double = 1.0 //AVSpeechUtteranceDefaultSpeechRate * 1.0 // Default rate
     @AppStorage("tts_voice_id") var ttsVoiceID: String = "" // Store identifier directly
     @AppStorage("openai_api_key") var apiKey: String = ""
     @AppStorage("backend_type") private var backendTypeRaw: String = BackendType.mock.rawValue
@@ -640,7 +640,7 @@ final class ChatStore: ObservableObject {
         }
 
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = ttsRate
+        utterance.rate = Float(ttsRate)
         // Find the selected voice, fallback if necessary
         utterance.voice = AVSpeechSynthesisVoice(identifier: ttsVoiceID) ?? AVSpeechSynthesisVoice(language: "vi-VN") ?? AVSpeechSynthesisVoice.speechVoices().first
 
@@ -1064,7 +1064,7 @@ struct SettingsSheet: View {
         _localCoreMLModelName = State(initialValue: store.coreMLModelName)
         _localSystemPrompt = State(initialValue: store.systemPrompt)
         _localTtsEnabled = State(initialValue: store.ttsEnabled)
-        _localTtsRate = State(initialValue: store.ttsRate)
+        _localTtsRate = State(initialValue: Float(store.ttsRate))
         _localTtsVoiceID = State(initialValue: store.ttsVoiceID)
     }
 
@@ -1182,7 +1182,7 @@ struct SettingsSheet: View {
         // Update simple AppStorage values directly on the store
         store.systemPrompt = localSystemPrompt
         store.ttsEnabled = localTtsEnabled
-        store.ttsRate = localTtsRate
+        store.ttsRate = Double(localTtsRate)
         store.ttsVoiceID = localTtsVoiceID
 
         // Check if backend-related settings changed
