@@ -1001,36 +1001,43 @@ struct MessageBubble: View {
 // The bar at the bottom for text and voice input
 struct ChatInputBar: View {
     @Binding var text: String
-    @ObservedObject var store: ChatStore // To send messages
-    @ObservedObject var speech: SpeechRecognizer // To handle voice input
-    @FocusState var isTextFieldFocused: Bool // To manage keyboard focus
-    
-    @GestureState private var isMicPressed: Bool = false // Track a long press on the mic
-    
+    @ObservedObject var store: ChatStore
+    @ObservedObject var speech: SpeechRecognizer
+    @FocusState var isTextFieldFocused: Bool
+
+    // Use @State for the visual pressed state, updated by the gesture
+    @State private var isMicPressedVisual: Bool = false
+
     var body: some View {
         VStack(spacing: 0) {
-            // Display speech recognizer transcript or error when active
-            if speech.isRecording || speech.errorMessage != nil {
-                HStack {
-                    Text(speech.errorMessage ?? speech.transcript)
-                        .font(.caption)
-                        .foregroundColor(speech.errorMessage != nil ? .red : .secondary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal)
-                        .padding(.bottom, 4)
-                    if speech.isRecording {
-                        ProgressView().scaleEffect(0.8)
-                    }
-                }.transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-            
-            // Main input row
+            // Speech transcript/error display (keep as is)
+            if speech.isRecording || speech.errorMessage != nil || isMicPressedVisual { // Show placeholder when pressed
+                 HStack {
+                    Text(speech.errorMessage ?? (speech.isRecording ? speech.transcript : "Giữ để nói...")) // Show prompt when pressed but not yet recording
+                         .font(.caption)
+                         .foregroundColor(speech.errorMessage != nil ? .red : .secondary)
+                         .lineLimit(1)
+                         .frame(maxWidth: .infinity, alignment: .leading)
+                         .padding(.horizontal)
+                         .padding(.bottom, 4)
+                     if speech.isRecording {
+                         ProgressView().scaleEffect(0.8).tint(.secondary)
+                     } else if isMicPressedVisual {
+                         // Optional: Show a subtle indicator that it's pressed but waiting
+                         Image(systemName: "ellipsis")
+                             .font(.caption)
+                             .foregroundColor(.secondary)
+                             .padding(.trailing, 5)
+                     }
+                 }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+             }
+
+            // Main input row (keep as is)
             HStack(alignment: .bottom, spacing: 8) {
-                // Text Field
-                TextField("Nhập tin nhắn hoặc giữ micro để nói...", text: $text, axis: .vertical)
+                TextField("Nhập tin nhắn hoặc giữ micro...", text: $text, axis: .vertical) // Shortened placeholder
                     .focused($isTextFieldFocused)
-                    .lineLimit(1...5) // Allow multi-line input
+                    .lineLimit(1...5)
                     .padding(.vertical, 8)
                     .padding(.horizontal, 12)
                     .background(Color(.secondarySystemBackground))
@@ -1039,91 +1046,181 @@ struct ChatInputBar: View {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .stroke(isTextFieldFocused ? Color.blue.opacity(0.5) : Color.gray.opacity(0.3), lineWidth: 1)
                     )
-                    .onSubmit { // Send on return key press
+                    .onSubmit {
                         if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             store.sendMessage(text)
                         }
                     }
-                    .disabled(store.isLoading) // Disable when processing
-                
-                // Microphone Button
-                micButton
-                
-                // Send Button (only shown if mic isn't pressed and text field has content)
-                if !isMicPressed && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    sendButton
-                }
+                    .disabled(store.isLoading)
+
+                micButton // Use the refactored micButton
+
+                // Send Button (conditional logic remains the same)
+                if !isMicPressedVisual && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                     sendButton
+                 }
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
-            .background(.thinMaterial) // Subtle background separation
-            .animation(.easeInOut(duration: 0.2), value: isMicPressed) // Animate mic/send visibility
-            .animation(.easeInOut, value: speech.isRecording) // Animate transcript visibility
+            .background(.thinMaterial)
+            // Use the local @State for animation trigger
+            .animation(.easeInOut(duration: 0.2), value: isMicPressedVisual)
+            .animation(.easeInOut, value: speech.isRecording)
         }
     }
-    
-    // Microphone Button View
+
+    // MARK: - Refactored Mic Button
+
     private var micButton: some View {
-        // VUI: Long press gesture for voice input
         let longPress = LongPressGesture(minimumDuration: 0.25)
-            .updating($isMicPressed) { currentState, gestureState, _ in
-                gestureState = currentState // Update gesture state while pressing
-                // Start recording only when the press begins effectively
-                if currentState && !speech.isRecording {
-                    // Haptic feedback for press start
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    // Request auth and start recording
-                    speech.requestAuthorization { authorized in
-                        if authorized {
-                            DispatchQueue.main.async { // Ensure UI updates are on main thread
-                                try? speech.startRecording()
-                            }
-                        }
-                    }
-                    isTextFieldFocused = false // Dismiss keyboard
+            // --- Phase 1: Update visual state ONLY ---
+            .onChanged { _ in
+                 // This triggers almost immediately when press starts
+                if !isMicPressedVisual && !speech.isRecording {
+                    isMicPressedVisual = true
+                     // Haptic feedback for initial press acknowledgment
+                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                      isTextFieldFocused = false // Dismiss keyboard early
                 }
             }
-            .onEnded { _ in
-                // VUI: Trigger finalization when mic is released
-                if speech.isRecording {
-                    // Haptic feedback for press end
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    speech.finishTranscription() // Use the dedicated method to stop and process
-                }
-            }
-        
-        return Image(systemName: speech.isRecording ? "mic.fill" : "mic.circle")
+            // --- Phase 2: Trigger Recording Async After Minimum Duration ---
+            // (This part seems less explicit in standard SwiftUI. Let's handle it differently below)
+            // --- Phase 3: Handle Tap and End ---
+            // Combine LongPress with a TapGesture using simultaneousGesture
+            // This is more complex. Let's stick to refining the LongPress first.
+
+            // --- Alternative: Using .updating and .onEnded cleanly ---
+             .updating($isMicPressedVisual) { currentState, gestureState, _ in
+                  // IMPORTANT: This block executes *during* the press *after* the min duration
+                 gestureState = currentState // Keep visual state updated
+
+                  // Check if the gesture just became active *and* we aren't already recording
+                 if currentState && !speech.isRecording {
+                      // Use DispatchQueue.main.async to avoid blocking the gesture callback
+                     DispatchQueue.main.async {
+                          // Double-check state inside async block
+                         if !speech.isRecording && isMicPressedVisual { // Check the visual state too
+                             initiateRecordingSequence()
+                         }
+                     }
+                 }
+             }
+             .onEnded { _ in
+                // This runs when the press ends (finger lifts *after* min duration, or gesture cancels)
+                  if speech.isRecording {
+                     print("Long press ended, finishing transcription.")
+                      // Haptic feedback for press end
+                      UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                      speech.finishTranscription()
+                 }
+                 // Always reset the visual state when the gesture ends naturally
+                 isMicPressedVisual = false
+             }
+
+        // --- The Button View ---
+        return Image(systemName: speech.isRecording ? "mic.fill" : (isMicPressedVisual ? "mic.circle.fill" : "mic.circle")) // Update icon based on visual state too
             .resizable()
             .scaledToFit()
             .frame(width: 28, height: 28)
-            .foregroundColor(isMicPressed || speech.isRecording ? .red : .blue) // VUI: Clear visual feedback for recording state
+            // Use the local @State for visual feedback
+            .foregroundColor(speech.isRecording ? .red : (isMicPressedVisual ? .orange : .blue))
             .padding(5)
-            .contentShape(Rectangle()) // Increase hit area
-            .gesture(longPress)
-            .disabled(store.isLoading) // Disable mic during backend processing
-            .accessibilityLabel(speech.isRecording ? "Đang ghi âm, thả để gửi" : "Giữ để nói")
-    }
-    
-    // Send Button View
-    private var sendButton: some View {
-        Button {
-            store.sendMessage(text)
-        } label: {
-            Image(systemName: "arrow.up.circle.fill")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 28, height: 28)
-                .foregroundColor(
-                    text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isLoading
-                    ? .gray.opacity(0.5) : .blue // VUI: Indicate disabled state
-                )
-        }
-        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isLoading)
-        .transition(.opacity.combined(with: .scale)) // Animate send button appearance
-        .accessibilityLabel("Gửi tin nhắn")
-    }
-}
+            .contentShape(Rectangle())
+            .gesture(longPress) // Apply the refined gesture
+            .disabled(store.isLoading)
+            .accessibilityLabel(speech.isRecording ? "Đang ghi âm, thả để gửi" : (isMicPressedVisual ? "Đang giữ..." : "Giữ để nói"))
 
+            // --- If the .updating approach still fails, try simpler onChanged + onEnded ---
+             /*
+             .onChanged { pressingStarted in
+                 if pressingStarted && !isMicPressedVisual && !speech.isRecording {
+                     isMicPressedVisual = true
+                     isTextFieldFocused = false
+                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                     // Defer the recording start slightly
+                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { // Small delay
+                         if isMicPressedVisual && !speech.isRecording { // Check state again
+                             initiateRecordingSequence()
+                         }
+                     }
+                 } else if !pressingStarted && isMicPressedVisual {
+                     // This handles cancellation *before* onEnded might fire
+                     if speech.isRecording {
+                         speech.finishTranscription()
+                     }
+                     isMicPressedVisual = false
+                 }
+             }
+             .onEnded { _ in
+                 // Runs if the long press *completed* (met duration)
+                 if speech.isRecording {
+                     speech.finishTranscription()
+                 }
+                 isMicPressedVisual = false
+             }
+             */
+    }
+
+    // MARK: - Recording Initiation Helper
+
+    private func initiateRecordingSequence() {
+        print("Initiating recording sequence...")
+         speech.requestAuthorization { authorized in
+             if authorized {
+                 // Ensure state is checked again and UI updates happen on main thread
+                 DispatchQueue.main.async {
+                      // Check if the user is *still* pressing visually and we haven't somehow started recording already
+                     if self.isMicPressedVisual && !speech.isRecording {
+                         print("Authorization granted, starting recording...")
+                         do {
+                             try speech.startRecording()
+                             // Haptic feedback for successful recording start
+                            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                         } catch {
+                             print("Error starting recording: \(error)")
+                             // Update UI with error if needed (SpeechRecognizer might do this)
+                             self.isMicPressedVisual = false // Reset visual state on error
+                         }
+                     } else {
+                         print("Authorization granted, but conditions to start recording are no longer met (released or already recording).")
+                         // If the user released *very* quickly after auth, reset visual state
+                         if !self.isMicPressedVisual && speech.isRecording {
+                             // This scenario is tricky, speech might stop itself via silence
+                         } else if !self.isMicPressedVisual {
+                             self.isMicPressedVisual = false
+                         }
+                     }
+                 }
+             } else {
+                 print("Authorization denied by user.")
+                 // Reset visual state if auth is denied
+                 DispatchQueue.main.async {
+                     self.isMicPressedVisual = false
+                 }
+                 // Keep the error message displayed by SpeechRecognizer
+             }
+         }
+     }
+
+    // Send Button View (keep as is)
+    private var sendButton: some View {
+         Button {
+             store.sendMessage(text)
+         } label: {
+             Image(systemName: "arrow.up.circle.fill")
+                 .resizable()
+                 .scaledToFit()
+                 .frame(width: 28, height: 28)
+                 .foregroundColor(
+                     text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isLoading
+                     ? .gray.opacity(0.5) : .blue
+                 )
+         }
+         .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isLoading)
+         .transition(.opacity.combined(with: .scale))
+         .accessibilityLabel("Gửi tin nhắn")
+     }
+}
 // Settings View Presented as a Sheet
 struct SettingsSheet: View {
     // Use @ObservedObject for the store to react to its changes
