@@ -382,7 +382,7 @@ final class SpeechRecognizer: NSObject, ObservableObject, SFSpeechRecognizerDele
     }
 
     // Call this when recording should stop and final transcript is processed
-    private func finishTranscription() {
+    func finishTranscription() {
          guard isRecording else { return } // Prevent multiple calls
          
          let finalTranscript = self.transcript // Capture current transcript
@@ -449,9 +449,9 @@ final class ChatStore: ObservableObject {
     // Settings synced with UserDefaults
     @AppStorage("system_prompt") var systemPrompt: String = "Bạn là một trợ lý AI hữu ích nói tiếng Việt."
     @AppStorage("tts_enabled") var ttsEnabled: Bool = false
-    @AppStorage("tts_rate") var ttsRate: Float = AVSpeechUtteranceDefaultSpeechRate * 1.0 // Default rate
+    @AppStorage("tts_rate") var ttsRate: Float = 1.0 //AVSpeechUtteranceDefaultSpeechRate * 1.0 // Default rate
     @AppStorage("tts_voice_id") var ttsVoiceID: String = "" // Store identifier directly
-    @AppStorage("openai_api_key") private var apiKey: String = ""
+    @AppStorage("openai_api_key") var apiKey: String = ""
     @AppStorage("backend_type") private var backendTypeRaw: String = BackendType.mock.rawValue
     @AppStorage("coreml_model_name") var coreMLModelName: String = "TinyChat" // Default local model
     @AppStorage("openai_model_name") var openAIModelName: String = "gpt-4o" // Default OpenAI model
@@ -531,12 +531,12 @@ final class ChatStore: ObservableObject {
          }
         
         if backendType == .coreML {
-             let coreMLBackend = CoreMLChatBackend(modelName: coreMLModelName)
+            var coreMLBackend = CoreMLChatBackend(modelName: coreMLModelName)
              if coreMLBackend.coreModel == nil {
                  print("Warning: CoreML model '\(coreMLModelName)' failed to load. Using Mock.")
-                 DispatchQueue.main.async {
-                     self.errorMessage = "Không tải được mô hình CoreML '\(coreMLModelName)'. Đang sử dụng Mock backend."
-                     self.backend = MockChatBackend()
+                 DispatchQueue.main.async { [weak self] in
+                     self?.errorMessage = "Không tải được mô hình CoreML '\(String(describing: self?.coreMLModelName))'. Đang sử dụng Mock backend."
+                     self?.backend = MockChatBackend()
                      // Optionally revert backendTypeRaw
                      // self.backendTypeRaw = BackendType.mock.rawValue
                  }
@@ -556,7 +556,7 @@ final class ChatStore: ObservableObject {
                  )
              case .coreML:
                  // Should have been handled above, but include for exhaustiveness
-                 let coreMLBackend = CoreMLChatBackend(modelName: coreMLModelName)
+                 var coreMLBackend = CoreMLChatBackend(modelName: coreMLModelName)
                  self.backend = (coreMLBackend.coreModel != nil) ? coreMLBackend : MockChatBackend()
              }
          }
@@ -700,7 +700,7 @@ final class ChatStore: ObservableObject {
               }
          } else if lowercasedCommand.contains("dùng coreml") || lowercasedCommand.contains("dùng local") {
              // Check if the selected CoreML model is valid before switching
-              let tempBackend = CoreMLChatBackend(modelName: coreMLModelName)
+             var tempBackend = CoreMLChatBackend(modelName: coreMLModelName)
               if tempBackend.coreModel != nil {
                   backendType = .coreML
               } else {
