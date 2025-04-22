@@ -445,37 +445,36 @@ final class SpeechRecognizer: NSObject, ObservableObject, SFSpeechRecognizerDele
 }
 
 // MARK: — 4. ViewModel (Central State Management)
-
 @MainActor
 final class ChatStore: ObservableObject {
     // MARK: - Published Properties (UI State)
-    @Published var conversations: [Conversation] = [] { didSet { saveToDisk() } } // List of saved chats
-    @Published var current: Conversation // The currently active chat
-    @Published var input: String = "" // Text in the input field
-    @Published var isLoading: Bool = false // Indicates if backend is processing
-    @Published var errorMessage: String? // Displays errors to the user
+    @Published var conversations: [Conversation] = [] { didSet { saveToDisk() } }
+    @Published var current: Conversation // Will be initialized below
+    @Published var input: String = ""
+    @Published var isLoading: Bool = false
+    @Published var errorMessage: String?
 
     // Settings synced with UserDefaults
     @AppStorage("system_prompt") var systemPrompt: String = "Bạn là một trợ lý AI hữu ích nói tiếng Việt."
     @AppStorage("tts_enabled") var ttsEnabled: Bool = false
-    @AppStorage("tts_rate") var ttsRate: Double = 1.0 //AVSpeechUtteranceDefaultSpeechRate * 1.0 // Default rate
-    @AppStorage("tts_voice_id") var ttsVoiceID: String = "" // Store identifier directly
+    @AppStorage("tts_rate") var ttsRate: Double = 1.0 // AVSpeechUtteranceDefaultSpeechRate * 1.0 might be better if API changes
+    @AppStorage("tts_voice_id") var ttsVoiceID: String = ""
     @AppStorage("openai_api_key") var apiKey: String = ""
     @AppStorage("backend_type") private var backendTypeRaw: String = BackendType.mock.rawValue
-    @AppStorage("coreml_model_name") var coreMLModelName: String = "TinyChat" // Default local model
-    @AppStorage("openai_model_name") var openAIModelName: String = "gpt-4o" // Default OpenAI model
+    @AppStorage("coreml_model_name") var coreMLModelName: String = "TinyChat"
+    @AppStorage("openai_model_name") var openAIModelName: String = "gpt-4o"
     @AppStorage("openai_temperature") var openAITemperature: Double = 0.7
     @AppStorage("openai_max_tokens") var openAIMaxTokens: Int = 512
 
     // Available models for settings
-    let availableCoreMLModels = ["TinyChat", "LocalChat"] // Example names
+    let availableCoreMLModels = ["TinyChat", "LocalChat"]
     let availableOpenAIModels = ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
-    let availableVoices: [AVSpeechSynthesisVoice] // Populated in init
+    let availableVoices: [AVSpeechSynthesisVoice]
 
     // MARK: - Private Properties
-    private(set) var backend: ChatBackend // The active chat backend (Mock, OpenAI, CoreML)
-    private let ttsSynth = AVSpeechSynthesizer() // For Text-to-Speech output
-    private var ttsDelegate: TTSSpeechDelegate? // Delegate to manage audio session
+    private(set) var backend: ChatBackend
+    private let ttsSynth = AVSpeechSynthesizer()
+    private var ttsDelegate: TTSSpeechDelegate?
 
     // MARK: - Computed Properties
     var backendType: BackendType {
@@ -485,322 +484,417 @@ final class ChatStore: ObservableObject {
 
     // MARK: - Initialization
     init() {
-        // Initialize available voices, preferring Vietnamese
-        availableVoices = AVSpeechSynthesisVoice.speechVoices().sorted { v1, v2 in
-            let v1Vi = v1.language.starts(with: "vi")
-            let v2Vi = v2.language.starts(with: "vi")
-            if v1Vi != v2Vi { return v1Vi } // Prioritize Vietnamese
-            return v1.name < v2.name
-        }
-        // Set default voice if none is stored or stored is invalid
-        if ttsVoiceID.isEmpty || availableVoices.first(where: { $0.identifier == ttsVoiceID }) == nil {
-            ttsVoiceID = availableVoices.first(where: {$0.language.starts(with: "vi-VN")})?.identifier ?? availableVoices.first?.identifier ?? ""
-        }
+        // ----- Phase 1: Initialize all stored properties -----
 
-        // Load history and configure initial state
-        let initialConversation = Conversation(messages: [.system(systemPrompt)])
-        self.current = initialConversation // Start with a fresh conversation initially
-        self.backend = MockChatBackend() // Start with mock backend
-        loadFromDisk() // Load saved conversations
-        configureBackend() // Configure the actual backend based on AppStorage
+        // Initialize properties that *don't* depend on reading 'self' yet
+        self.availableVoices = AVSpeechSynthesisVoice.speechVoices().sorted { v1, v2 in
+             let v1Vi = v1.language.starts(with: "vi")
+             let v2Vi = v2.language.starts(with: "vi")
+             if v1Vi != v2Vi { return v1Vi } // Prioritize Vietnamese
+             return v1.name < v2.name
+         }
+        self.backend = MockChatBackend() // Start with a temporary backend
+        self.ttsDelegate = TTSSpeechDelegate() // Initialize the delegate helper
 
-        // Set up TTS delegate
-        ttsDelegate = TTSSpeechDelegate()
-        ttsSynth.delegate = ttsDelegate
-        
-        // If conversations were loaded, select the most recent one
+        // Initialize 'current' with a temporary placeholder.
+        // We *must* give it a value here. It will be overwritten in Phase 2.
+        self.current = Conversation(id: UUID(), title: "", messages: [])
+
+        // Note: @AppStorage properties (apiKey, systemPrompt, ttsVoiceID, etc.)
+        // are automatically initialized from UserDefaults by the wrapper at this point.
+
+        // ----- Phase 2: Perform logic *after* all properties are initialized -----
+        // Now 'self' is fully available.
+
+        // 1. Set the TTS delegate
+        self.ttsSynth.delegate = self.ttsDelegate
+
+        // 2. Correct ttsVoiceID if needed (now safe to read self.ttsVoiceID)
+        let initialTTSVoiceID = self.ttsVoiceID // Read the potentially empty value loaded by @AppStorage
+        if initialTTSVoiceID.isEmpty || self.availableVoices.first(where: { $0.identifier == initialTTSVoiceID }) == nil {
+             // Assign a default Vietnamese voice or the first available voice
+             self.ttsVoiceID = self.availableVoices.first(where: {$0.language.starts(with: "vi-VN")})?.identifier ?? self.availableVoices.first?.identifier ?? ""
+         }
+
+        // 3. Create the *real* initial conversation template using the loaded systemPrompt
+        let realInitialConversation = Conversation(messages: [.system(self.systemPrompt)]) // Now safe to read self.systemPrompt
+
+        // 4. Load saved conversations from disk FIRST
+        loadFromDisk() // This populates self.conversations
+
+        // 5. Configure the actual backend based on loaded settings (reads @AppStorage values)
+        configureBackend() // Now safe to call
+
+        // 6. Assign the final 'current' conversation
         if let mostRecent = conversations.first {
-            self.current = mostRecent
+              self.current = mostRecent // Use the most recent saved chat if history exists
+             // Optional: Ensure system prompt consistency in loaded chats
+              if self.current.messages.first?.role != .system {
+                  self.current.messages.insert(.system(self.systemPrompt), at: 0)
+                  // If you modified 'current', update the main array too for consistency on next save
+                  if let index = self.conversations.firstIndex(where: { $0.id == self.current.id }) {
+                      self.conversations[index] = self.current
+                  }
+              } else if self.current.messages.first?.content != self.systemPrompt {
+                  // Policy decision: Do you want to UPDATE the system message in old chats
+                  // if the user changed the setting? Or leave old chats as they were?
+                  // Example: Update it:
+                  // self.current.messages[0] = .system(self.systemPrompt)
+                  // if let index = self.conversations.firstIndex(where: { $0.id == self.current.id }) {
+                  //     self.conversations[index] = self.current
+                  // }
+              }
         } else {
-            // Ensure the initial system message is present if no history
-            self.current = initialConversation
+            // If no history was loaded, use the freshly created initial conversation template
+            self.current = realInitialConversation
         }
-    }
 
-    // MARK: - Backend Management
-    func setBackend(_ newBackend: ChatBackend, type: BackendType) {
-        backend = newBackend
-        // Don't set backendType here directly, rely on AppStorage watcher
-        backendTypeRaw = type.rawValue // Update AppStorage which triggers configureBackend via getter/setter
-        print("Backend set to: \(type.rawValue)")
-    }
+        // Initialization complete
+    } // End init
 
-    private func configureBackend() {
-        print("Configuring backend: \(backendType.rawValue)")
-        // VUI: Inform user about backend state/errors
-        if backendType == .openAI && apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-             print("Warning: OpenAI backend selected but API key is missing. Using Mock.")
-             DispatchQueue.main.async { // Ensure UI updates on main thread
-                 self.errorMessage = "Khóa API OpenAI bị thiếu. Đang sử dụng Mock backend."
-                 self.backend = MockChatBackend()
-                 // Optionally revert backendTypeRaw to mock if you want the setting to reflect the fallback
-                 // self.backendTypeRaw = BackendType.mock.rawValue
-             }
-             return // Exit early if key is missing for OpenAI
-         }
-        
-        if backendType == .coreML {
-            var coreMLBackend = CoreMLChatBackend(modelName: coreMLModelName)
-             if coreMLBackend.coreModel == nil {
-                 print("Warning: CoreML model '\(coreMLModelName)' failed to load. Using Mock.")
-                 DispatchQueue.main.async { [weak self] in
-                     self?.errorMessage = "Không tải được mô hình CoreML '\(String(describing: self?.coreMLModelName))'. Đang sử dụng Mock backend."
-                     self?.backend = MockChatBackend()
-                     // Optionally revert backendTypeRaw
-                     // self.backendTypeRaw = BackendType.mock.rawValue
-                 }
-                 return // Exit early if CoreML model failed to load
-             }
-             self.backend = coreMLBackend
-         } else {
-             switch backendType {
-             case .mock:
-                 backend = MockChatBackend()
-             case .openAI: // We already checked for the API key above
-                 backend = RealOpenAIBackend(
-                     apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
-                     model: openAIModelName,
-                     temperature: openAITemperature,
-                     maxTokens: openAIMaxTokens
-                 )
-             case .coreML:
-                 // Should have been handled above, but include for exhaustiveness
-                 var coreMLBackend = CoreMLChatBackend(modelName: coreMLModelName)
-                 self.backend = (coreMLBackend.coreModel != nil) ? coreMLBackend : MockChatBackend()
-             }
-         }
-        print("Backend configured successfully: \(backendType.rawValue)")
-    }
+    // ... (rest of the ChatStore methods: setBackend, configureBackend, resetChat, etc.) ...
+
+     // MARK: - Backend Management
+      func setBackend(_ newBackend: ChatBackend, type: BackendType) {
+         backend = newBackend
+         // Update AppStorage which triggers configureBackend via the computed property's setter
+         backendTypeRaw = type.rawValue
+         print("Backend explicitly set to: \(type.rawValue)")
+     }
+
+     private func configureBackend() {
+         print("Configuring backend for type: \(self.backendType.rawValue)") // Use self explicitly for clarity inside method
+
+         // --- Safety Check: OpenAI ---
+          if self.backendType == .openAI && self.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+              print("Warning: OpenAI backend selected but API key is missing. Falling back to Mock.")
+              // Update state on the main thread for potential UI feedback
+              DispatchQueue.main.async { [weak self] in
+                  guard let self = self else { return }
+                  // Check if we are not already on Mock to avoid infinite loop if setter calls configure again
+                  if self.backendType != .mock {
+                      self.errorMessage = "Khóa API OpenAI bị thiếu. Sử dụng Mock backend."
+                      self.backend = MockChatBackend() // Set directly
+                      self.backendTypeRaw = BackendType.mock.rawValue // Update storage last
+                  }
+              }
+               return // Stop configuration here
+           }
+
+         // --- Safety Check: CoreML ---
+          if self.backendType == .coreML {
+              let coreMLBackend = CoreMLChatBackend(modelName: self.coreMLModelName) // Create instance to check model
+              if coreMLBackend.coreModel == nil {
+                   print("Warning: CoreML model '\(self.coreMLModelName)' failed to load. Falling back to Mock.")
+                   DispatchQueue.main.async { [weak self] in
+                       guard let self = self else { return }
+                       if self.backendType != .mock {
+                           self.errorMessage = "Không tải được mô hình CoreML '\(self.coreMLModelName)'. Sử dụng Mock backend."
+                           self.backend = MockChatBackend()
+                           self.backendTypeRaw = BackendType.mock.rawValue
+                       }
+                   }
+                   return // Stop configuration here
+               }
+              // If model loaded successfully, assign the created backend instance
+              self.backend = coreMLBackend
+           } else {
+               // --- Configure other backends (Mock, or OpenAI if key was present) ---
+               switch self.backendType {
+               case .mock:
+                   self.backend = MockChatBackend()
+               case .openAI:
+                   // Key presence was checked earlier
+                   self.backend = RealOpenAIBackend(
+                       apiKey: self.apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+                       model: self.openAIModelName,
+                       temperature: self.openAITemperature,
+                       maxTokens: self.openAIMaxTokens
+                   )
+               case .coreML:
+                   // This case was handled above, but include for safety/exhaustiveness
+                    print("CoreML should have been configured already. Re-checking.")
+                    let backendCheck = CoreMLChatBackend(modelName: self.coreMLModelName)
+                    self.backend = (backendCheck.coreModel != nil) ? backendCheck : MockChatBackend()
+
+               }
+           }
+         print("Backend configured successfully to: \(self.backendType.rawValue)")
+     }
 
     // MARK: - Chat Actions
-    func resetChat() {
-        ttsSynth.stopSpeaking(at: .immediate) // VUI: Stop speech immediately
-        current = Conversation(messages: [.system(systemPrompt)]) // Start new, keeping system prompt
-        input = ""
-        isLoading = false // Ensure loading indicator is off
-        // Explicitly *don't* upsert here, wait for first message pair
-    }
+     func resetChat() {
+         stopSpeaking() // Stop TTS if active
+         // Create a new conversation based on the *current* system prompt setting
+         self.current = Conversation(messages: [.system(self.systemPrompt)])
+         self.input = ""
+         self.isLoading = false
+         self.errorMessage = nil
+         // Don't save to history until messages are added.
+         print("Chat reset.")
+     }
 
-    func sendMessage(_ text: String) {
-        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty, !isLoading else { return }
+     func sendMessage(_ text: String) {
+         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard !trimmedText.isEmpty, !isLoading else { return }
 
-        ttsSynth.stopSpeaking(at: .word) // VUI: Stop previous speech cleanly
-        
-        // Create and immediately add the user message for responsiveness
-        let userMessage = Message.user(trimmedText)
-        current.messages.append(userMessage)
-        let messageCapture = current.messages // Capture messages *before* backend call
+         stopSpeaking() // Stop previous TTS
 
-        input = "" // Clear input field
-        isLoading = true // Show loading indicator
-        errorMessage = nil // Clear previous errors
-
-        backend.streamChat(messages: messageCapture, systemPrompt: systemPrompt) { [weak self] result in
-            guard let self = self else { return }
-            
-            DispatchQueue.main.async { // Ensure all updates are on the main thread
-                self.isLoading = false // Hide loading indicator
-                
-                switch result {
-                case .success(let replyText):
-                    let assistantMessage = Message.assistant(replyText)
-                    self.current.messages.append(assistantMessage)
-                    self.upsertConversation() // Save updated conversation
-                    
-                    // VUI: Speak the response if TTS is enabled
-                    if self.ttsEnabled {
-                        self.speak(replyText)
-                    }
-                    
-                case .failure(let error):
-                    // VUI: Display error to user
-                      self.errorMessage = "Lỗi: \(error.localizedDescription)"
-                     // Optionally remove the user message if the backend failed
-                      if let lastMsg = self.current.messages.last, lastMsg.id == userMessage.id {
-                          print("Backend failed, considering removing last user message (ID: \(userMessage.id)). Current count: \(self.current.messages.count)")
-                          // Decide if you want to remove the user message on failure
-                          // self.current.messages.removeLast()
-                      } else {
-                          print("Backend failed, but last message ID doesn't match user message ID or messages array modified unexpectedly.")
-                      }
-                }
-            }
-        }
-    }
-
-    // VUI: Text-to-Speech Functionality
-    func speak(_ text: String) {
-        guard ttsEnabled else { return } // Check if TTS is enabled
-
-        // Ensure delegate is set (needed for audio session management)
-        if ttsSynth.delegate == nil {
-            ttsDelegate = TTSSpeechDelegate()
-            ttsSynth.delegate = ttsDelegate
-        }
-
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = Float(ttsRate)
-        // Find the selected voice, fallback if necessary
-        utterance.voice = AVSpeechSynthesisVoice(identifier: ttsVoiceID) ?? AVSpeechSynthesisVoice(language: "vi-VN") ?? AVSpeechSynthesisVoice.speechVoices().first
-
-        // VUI: Clear spoken feedback for clarity
-        print("Speaking: \(text.prefix(50))...")
-        ttsSynth.speak(utterance) // Delegate handles audio session activation/deactivation
-    }
-    
-    // Stop any ongoing TTS
-    func stopSpeaking() {
-        ttsSynth.stopSpeaking(at: .immediate)
-        // Delegate will handle audio session deactivation
-    }
-
-    // MARK: - History Management
-    func deleteConversation(id: UUID) {
-        conversations.removeAll { $0.id == id }
-        if current.id == id { // If deleting the current chat, reset
-            resetChat()
-        }
-        // saveToDisk() is handled by didSet on conversations
-    }
-
-    func selectConversation(_ conversation: Conversation) {
-        ttsSynth.stopSpeaking(at: .immediate) // Stop speech when switching chats
-        current = conversation
-    }
-
-    func renameConversation(_ conversation: Conversation, to newTitle: String) {
-        let trimmedTitle = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTitle.isEmpty, let index = conversations.firstIndex(where: { $0.id == conversation.id }) else { return }
-        conversations[index].title = trimmedTitle
-        if current.id == conversation.id {
-            current.title = trimmedTitle
-        }
-        // saveToDisk() handled by didSet
-    }
-
-    func clearHistory() {
-        conversations.removeAll()
-        resetChat() // Reset to a new empty chat state
-        // saveToDisk() handled by didSet
-    }
-
-    // MARK: - Voice Command Handling (VUI Integration)
-    // Called by SpeechRecognizer's onFinalTranscription callback
-    func handleVoiceCommand(_ command: String) {
-         let lowercasedCommand = command.lowercased().trimmingCharacters(in: .whitespaces)
-         print("Handling voice command: \(lowercasedCommand)")
+         let userMessage = Message.user(trimmedText)
+          // Append user message *immediately* for UI responsiveness
+         current.messages.append(userMessage)
          
-         // VUI: Simple keyword spotting for commands
-         // More robust NLU could be used here
-         if lowercasedCommand == "chat mới" || lowercasedCommand == "new chat" {
-             resetChat()
-         } else if lowercasedCommand == "bật đọc" || lowercasedCommand == "tts on" {
-             ttsEnabled = true
-         } else if lowercasedCommand == "tắt đọc" || lowercasedCommand == "tts off" {
-             ttsEnabled = false
-         } else if lowercasedCommand.contains("dùng mock") || lowercasedCommand.contains("use mock") {
-             backendType = .mock // This triggers setter and configureBackend
-         } else if lowercasedCommand.contains("dùng open ai") || lowercasedCommand.contains("dùng real") || lowercasedCommand.contains("use real") {
-              if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                  backendType = .openAI
-              } else {
-                  errorMessage = "Không thể chuyển sang OpenAI, thiếu API key."
+         // Create a copy of messages *before* the async call
+         let messagesForBackend = current.messages
+
+         input = ""
+         isLoading = true
+         errorMessage = nil
+
+          print("Sending messages to backend (\(backendType.rawValue)). Count: \(messagesForBackend.count)")
+
+         backend.streamChat(messages: messagesForBackend, systemPrompt: systemPrompt) { [weak self] result in
+              // Ensure updates happen on the main thread
+              DispatchQueue.main.async {
+                  guard let self = self else { return }
+                  self.isLoading = false
+
+                  switch result {
+                  case .success(let replyText):
+                       print("Received reply: \(replyText.prefix(50))...")
+                      let assistantMessage = Message.assistant(replyText)
+                      self.current.messages.append(assistantMessage)
+                      self.upsertConversation() // Save the updated conversation
+
+                      if self.ttsEnabled {
+                          self.speak(replyText)
+                      }
+
+                  case .failure(let error):
+                       print("Backend error: \(error.localizedDescription)")
+                       self.errorMessage = "Lỗi Backend: \(error.localizedDescription)"
+                      // Optional: Decide whether to remove the user's message that caused the error
+                      // if let lastMsg = self.current.messages.last, lastMsg.id == userMessage.id {
+                      //     self.current.messages.removeLast()
+                      // }
+                  }
               }
-         } else if lowercasedCommand.contains("dùng coreml") || lowercasedCommand.contains("dùng local") {
-             // Check if the selected CoreML model is valid before switching
-             var tempBackend = CoreMLChatBackend(modelName: coreMLModelName)
-              if tempBackend.coreModel != nil {
-                  backendType = .coreML
-              } else {
-                  errorMessage = "Không thể chuyển sang CoreML, mô hình '\(coreMLModelName)' không tải được."
-              }
-         } else if !lowercasedCommand.isEmpty {
-             // If not a recognized command, treat as message input
-             sendMessage(command)
          }
      }
 
-    // MARK: - Persistence (UserDefaults)
-    private func loadFromDisk() {
-        guard let data = UserDefaults.standard.data(forKey: "ChatHistory_v2") else {
-            print("No chat history found in UserDefaults.")
-            return
-        }
-        do {
-            let decoder = JSONDecoder()
-            let loadedConversations = try decoder.decode([Conversation].self, from: data)
-            self.conversations = loadedConversations
-             print("Loaded \(loadedConversations.count) conversations from UserDefaults.")
-            // Select the most recent conversation after loading
-            if let mostRecent = conversations.first {
-                 // Make sure the loaded conversation has the current system prompt if it's missing
-                 if mostRecent.messages.first(where: { $0.role == .system }) == nil {
-                     var updatedRecent = mostRecent
-                     updatedRecent.messages.insert(.system(systemPrompt), at: 0)
-                     self.current = updatedRecent
-                     // Update the conversation in the main array as well
-                     if let index = self.conversations.firstIndex(where: { $0.id == mostRecent.id }) {
-                         self.conversations[index] = updatedRecent
-                     }
-                 } else {
-                    self.current = mostRecent
-                 }
-             }
-        } catch {
-            print("Failed to decode chat history: \(error)")
-             // Handle potential decoding error, maybe clear corrupted data?
-             // UserDefaults.standard.removeObject(forKey: "ChatHistory_v2")
-        }
-    }
+     func speak(_ text: String) {
+          guard ttsEnabled, !text.isEmpty else { return }
 
-    private func saveToDisk() {
-         guard !conversations.isEmpty else {
-             // If conversations array is empty, remove the key from UserDefaults
-             UserDefaults.standard.removeObject(forKey: "ChatHistory_v2")
-             print("Cleared chat history from UserDefaults.")
+          if ttsSynth.delegate == nil {
+             ttsDelegate = TTSSpeechDelegate()
+             ttsSynth.delegate = ttsDelegate
+         }
+
+          // Ensure correct audio configuration before speaking
+           do {
+               try AVAudioSession.sharedInstance().setCategory(.playback, mode: .voicePrompt, options: [.duckOthers])
+               // Activation is handled by delegate now -> try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+           } catch {
+               print("Failed to set audio session category for TTS: \(error)")
+              // Optionally inform the user
+               // self.errorMessage = "Lỗi cấu hình âm thanh cho TTS."
+               // return // Decide if you should stop here
+           }
+
+         let utterance = AVSpeechUtterance(string: text)
+         utterance.rate = Float(ttsRate) // Use Float for rate
+         utterance.voice = AVSpeechSynthesisVoice(identifier: ttsVoiceID)
+             ?? AVSpeechSynthesisVoice(language: "vi-VN") // Fallback to default Vietnamese
+             ?? AVSpeechSynthesisVoice.speechVoices().first // Absolute fallback
+
+          if utterance.voice == nil {
+              print("Warning: No suitable TTS voice found for identifier '\(ttsVoiceID)' or language 'vi-VN'. Using system default.")
+          }
+
+         print("Attempting to speak: \(text.prefix(50))... using voice: \(utterance.voice?.name ?? "Unknown")")
+         ttsSynth.speak(utterance)
+     }
+
+    // MARK: - Helper to stop TTS cleanly
+     func stopSpeaking() {
+         if ttsSynth.isSpeaking {
+             ttsSynth.stopSpeaking(at: .word) // Use .word for smoother interruption usually
+             print("Stopped speaking.")
+             // Delegate will handle audio session deactivation
+         }
+     }
+
+     // MARK: - History Management
+      func deleteConversation(id: UUID) {
+         conversations.removeAll { $0.id == id }
+         if current.id == id {
+             resetChat() // Reset if the current one was deleted
+         }
+         print("Deleted conversation: \(id). Remaining: \(conversations.count)")
+         // saveToDisk handled by didSet
+     }
+
+     func selectConversation(_ conversation: Conversation) {
+         stopSpeaking() // Stop TTS when switching
+          // Ensure system prompt consistency if needed (using the pattern from init)
+          var selectedConvo = conversation
+          if selectedConvo.messages.first?.role != .system {
+              selectedConvo.messages.insert(.system(self.systemPrompt), at: 0)
+          } else if selectedConvo.messages.first?.content != self.systemPrompt {
+              // Decide update policy here (e.g., update the system message in the loaded convo)
+              // selectedConvo.messages[0] = .system(self.systemPrompt)
+          }
+         self.current = selectedConvo
+         print("Selected conversation: \(current.id) - \(current.title)")
+     }
+
+     func renameConversation(_ conversation: Conversation, to newTitle: String) {
+         let trimmedTitle = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard !trimmedTitle.isEmpty, let index = conversations.firstIndex(where: { $0.id == conversation.id }) else { return }
+         conversations[index].title = trimmedTitle
+         if current.id == conversation.id {
+             current.title = trimmedTitle
+         }
+         print("Renamed conversation \(conversation.id) to: \(trimmedTitle)")
+         // saveToDisk handled by didSet
+     }
+
+     func clearHistory() {
+          stopSpeaking() // Stop any TTS
+          conversations.removeAll()
+          resetChat() // Reset to a new empty chat state
+          print("Cleared all conversation history.")
+          // saveToDisk will be triggered by conversations.removeAll() via didSet
+     }
+
+    // MARK: - Voice Command Handling
+     func handleVoiceCommand(_ command: String) {
+         let lowercasedCommand = command.lowercased().trimmingCharacters(in: .whitespaces)
+         guard !lowercasedCommand.isEmpty else { return }
+         print("Handling voice command: '\(lowercasedCommand)'")
+
+         // Map commands to specific actions
+          let commandActions: [String: () -> Void] = [
+              "chat mới": { self.resetChat() },
+              "new chat": { self.resetChat() },
+              "bật đọc": { self.ttsEnabled = true },
+              "tts on": { self.ttsEnabled = true },
+              "tắt đọc": { self.ttsEnabled = false },
+              "tts off": { self.ttsEnabled = false },
+              "dùng mock": { self.backendType = .mock },
+              "use mock": { self.backendType = .mock },
+              "dùng open ai": { self.attemptSetBackend(.openAI) },
+              "dùng real": { self.attemptSetBackend(.openAI) },
+              "use real": { self.attemptSetBackend(.openAI) },
+              "dùng coreml": { self.attemptSetBackend(.coreML) },
+              "dùng local": { self.attemptSetBackend(.coreML) },
+              "use coreml": { self.attemptSetBackend(.coreML) },
+              "use local": { self.attemptSetBackend(.coreML) }
+          ]
+
+         // Execute command if found, otherwise send as message
+         if let action = commandActions[lowercasedCommand] {
+             action()
+         } else {
+              print("Voice command not recognized, sending as message.")
+             sendMessage(command) // Send the original casing
+         }
+     }
+    
+    // Helper for voice command backend switching with checks
+    private func attemptSetBackend(_ type: BackendType) {
+         switch type {
+         case .openAI:
+             if apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                  print("Voice command failed: Cannot switch to OpenAI, API key missing.")
+                 errorMessage = "Thiếu API key để dùng OpenAI."
+             } else {
+                 backendType = .openAI
+             }
+         case .coreML:
+             let tempBackend = CoreMLChatBackend(modelName: coreMLModelName)
+             if tempBackend.coreModel == nil {
+                  print("Voice command failed: Cannot switch to CoreML, model '\(coreMLModelName)' failed.")
+                 errorMessage = "Không thể tải mô hình CoreML '\(coreMLModelName)'."
+             } else {
+                 backendType = .coreML
+             }
+         case .mock:
+              backendType = .mock // Should always succeed
+         }
+     }
+
+    // MARK: - Persistence
+     private func loadFromDisk() {
+         guard let data = UserDefaults.standard.data(forKey: "ChatHistory_v2") else {
+             print("No chat history found in UserDefaults.")
+             // Ensure conversations is empty if nothing is loaded
+              self.conversations = []
              return
          }
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted // Optional: for readability if debugging
-            let data = try encoder.encode(conversations)
-            UserDefaults.standard.set(data, forKey: "ChatHistory_v2")
+         do {
+             let decoder = JSONDecoder()
+             let loadedConversations = try decoder.decode([Conversation].self, from: data)
+             self.conversations = loadedConversations // Update the main array
+             print("Loaded \(loadedConversations.count) conversations from UserDefaults.")
+         } catch {
+             print("Failed to decode chat history: \(error). Clearing corrupted data.")
+             // Clear potentially corrupted data
+              self.conversations = []
+             UserDefaults.standard.removeObject(forKey: "ChatHistory_v2")
+              DispatchQueue.main.async {
+                  self.errorMessage = "Lịch sử chat bị lỗi và đã được xóa."
+              }
+         }
+     }
+
+     private func saveToDisk() {
+         guard !conversations.isEmpty else {
+             // If conversations array is empty, remove the key
+             if UserDefaults.standard.object(forKey: "ChatHistory_v2") != nil {
+                  UserDefaults.standard.removeObject(forKey: "ChatHistory_v2")
+                  print("Removed chat history key from UserDefaults.")
+             }
+             return
+         }
+         do {
+             let encoder = JSONEncoder()
+             // encoder.outputFormatting = .prettyPrinted // Optional: for debugging
+             let data = try encoder.encode(conversations)
+             UserDefaults.standard.set(data, forKey: "ChatHistory_v2")
              print("Saved \(conversations.count) conversations to UserDefaults.")
-        } catch {
-            print("Failed to encode chat history: \(error)")
-            // VUI: Inform user about saving failure?
+         } catch {
+             print("Failed to encode chat history: \(error)")
              DispatchQueue.main.async {
                  self.errorMessage = "Không thể lưu lịch sử chat."
              }
-        }
-    }
-
-    // Adds a new conversation or updates an existing one in the `conversations` array
-    private func upsertConversation() {
-         // Ensure there are actual user/assistant messages before saving
-         guard current.messages.contains(where: { $0.role == .user }) else { return }
-
-        // Update title if it's still the default "New Chat" based on first user message
-        if current.title == "New Chat" || current.title.isEmpty {
-             if let firstUser = current.messages.first(where: { $0.role == .user })?.content {
-                 current.title = String(firstUser.prefix(32))
-             }
          }
-        
-        if let index = conversations.firstIndex(where: { $0.id == current.id }) {
-            // Update existing conversation
-             print("Upserting: Updating conversation ID \(current.id) at index \(index)")
-            conversations[index] = current
-        } else {
-            // Insert new conversation at the beginning
-            print("Upserting: Inserting new conversation ID \(current.id)")
-            conversations.insert(current, at: 0)
-        }
-         // saveToDisk() is handled by the didSet observer on `conversations`
-    }
-}
+     }
 
+     private func upsertConversation() {
+         guard current.messages.contains(where: { $0.role == .user }) else {
+             // Don't save if there's no user message yet (e.g., just system prompt)
+             return
+         }
+
+         // Auto-update title if it's still a placeholder or empty
+          let generatedTitle = String(current.messages.first(where: { $0.role == .user })?.content.prefix(32) ?? "Chat")
+          if current.title.isEmpty || current.title == "Loading..." || current.title == "New Chat" {
+              current.title = generatedTitle
+          }
+
+         if let index = conversations.firstIndex(where: { $0.id == current.id }) {
+             // Update existing
+              print("Upserting: Updating conversation ID \(current.id) at index \(index)")
+             conversations[index] = current
+         } else {
+             // Insert new at the beginning
+              print("Upserting: Inserting new conversation ID \(current.id) with title '\(current.title)'")
+             conversations.insert(current, at: 0)
+         }
+         // saveToDisk() handled by didSet observer on `conversations`
+     }
+} // End ChatStore
 // MARK: - 4.1 TTS Delegate (for Audio Session Management)
 
 // VUI: Manage audio session for TTS playback clarity
