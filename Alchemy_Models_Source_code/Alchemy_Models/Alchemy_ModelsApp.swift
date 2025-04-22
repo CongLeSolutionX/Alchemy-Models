@@ -21,7 +21,12 @@ struct Alchemy_ModelsApp: App {
             //CoreMLImageClassifierView()
             //Resnet50ClassifierView()
             //YOLOv3CameraView()
-            YOLOCameraView()
+            //YOLOCameraView()
+            ChatDemoView()
+                // Example environment overrides for preview if needed:
+                 .environmentObject(ChatStore()) // Provide a specific store configuration for preview
+                 .preferredColorScheme(.dark) // Preview in dark mode
+
         }
     }
 }
